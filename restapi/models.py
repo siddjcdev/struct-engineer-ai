@@ -1,9 +1,11 @@
-from pydantic import BaseModel, Field
+from dataclasses import dataclass, field
 from typing import List, Optional
-from datetime import datetime
+# Note: The 'datetime' import was unused in the original models
+# from datetime import datetime
 
 
-class EarthquakeData(BaseModel):
+@dataclass
+class EarthquakeData:
     name: str
     magnitude: float
     dt: float
@@ -13,21 +15,25 @@ class EarthquakeData(BaseModel):
     pga_g: float
 
 
-class WindData(BaseModel):
+@dataclass
+class WindData:
     name: str
     mean_speed: float
     max_force_per_floor: float
     total_max_force: float
 
 
-class InputData(BaseModel):
+@dataclass
+class InputData:
     earthquake: EarthquakeData
     use_wind: bool
     wind: WindData
 
 
-class BaselinePerformance(BaseModel):
-    DCR: float = Field(..., description="Demand-to-Capacity Ratio")
+@dataclass
+class BaselinePerformance:
+    # Pydantic's Field(...) with a description is converted to metadata
+    DCR: float = field(metadata={"description": "Demand-to-Capacity Ratio"})
     max_drift: float
     max_roof: float
     rms_roof: float
@@ -37,7 +43,8 @@ class BaselinePerformance(BaseModel):
     dcr_profile: List[float]
 
 
-class TMDConfiguration(BaseModel):
+@dataclass
+class TMDConfiguration:
     floor: int
     mass_ratio: float
     damping_ratio: float
@@ -48,7 +55,8 @@ class TMDConfiguration(BaseModel):
     optimization_score: float
 
 
-class TMDResults(BaseModel):
+@dataclass
+class TMDResults:
     DCR: float
     max_drift: float
     max_roof: float
@@ -59,7 +67,8 @@ class TMDResults(BaseModel):
     dcr_profile: List[float]
 
 
-class Improvements(BaseModel):
+@dataclass
+class Improvements:
     dcr_reduction_pct: float
     drift_reduction_pct: float
     roof_reduction_pct: float
@@ -68,28 +77,32 @@ class Improvements(BaseModel):
     rms_acc_reduction_pct: float
 
 
-class V7Metadata(BaseModel):
+@dataclass
+class V7Metadata:
     candidate_floors: List[int]
     performance_rating: str
     recommendation: str
     multi_objective_score: float
 
 
-class TimeSeriesData(BaseModel):
+@dataclass
+class TimeSeriesData:
     time: List[float]
     earthquake_acceleration: List[float]
     baseline_roof: List[float]
     tmd_roof: List[float]
 
 
-class SimulationMetadata(BaseModel):
+@dataclass
+class SimulationMetadata:
     n_floors: int
     time_step: float
     duration: float
     soft_story: int
 
 
-class TMDSimulation(BaseModel):
+@dataclass
+class TMDSimulation:
     version: str
     timestamp: str
     metadata: SimulationMetadata
@@ -102,7 +115,8 @@ class TMDSimulation(BaseModel):
     time_series: TimeSeriesData
 
 
-class PerformanceComparison(BaseModel):
+@dataclass
+class PerformanceComparison:
     metric: str
     baseline: float
     with_tmd: float
