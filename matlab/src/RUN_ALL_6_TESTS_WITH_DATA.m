@@ -82,25 +82,25 @@ function run_quick_demo_v7()
     pause(1);
     
     fprintf('[%d/6] Test 3: Small Earthquake (M 4.5)\n', test_count+1);
-    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST3_small_earthquake_M4.5.csv', false));
+    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST3_small_earthquake_M4.5.csv'), false);
     test_count = test_count + 1;
     fprintf('✓ Complete\n\n');
     pause(1);
     
     fprintf('[%d/6] Test 4: Large Earthquake (M 6.9)\n', test_count+1);
-    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST4_large_earthquake_M6.9.csv', false));
+    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST4_large_earthquake_M6.9.csv'), false);
     test_count = test_count + 1;
     fprintf('✓ Complete\n\n');
     pause(1);
     
     fprintf('[%d/6] Test 5: Extreme Combined Loading\n', test_count+1);
-    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST5_earthquake_M6.7.csv', true, 'TEST5_hurricane_wind_50ms.csv'));
+    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST5_earthquake_M6.7.csv'), true, fullfile(folder, 'TEST5_hurricane_wind_50ms.csv'));
     test_count = test_count + 1;
     fprintf('✓ Complete\n\n');
     pause(1);
     
     fprintf('[%d/6] Test 6: Stress Test (10%% noise)\n', test_count+1);
-    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6b_with_10pct_noise.csv', false));
+    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6b_with_10pct_noise.csv'), false);
     test_count = test_count + 1;
     fprintf('✓ Complete\n\n');
     
@@ -137,7 +137,7 @@ function run_all_comprehensive_v7()
     fprintf('╔═══════════════════════════════════════════════════════╗\n');
     fprintf('║  TEST CASE 3: SMALL EARTHQUAKE                        ║\n');
     fprintf('╚═══════════════════════════════════════════════════════╝\n');
-    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST3_small_earthquake_M4.5.csv', false));
+    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST3_small_earthquake_M4.5.csv'), false);
     test_count = test_count + 1;
     fprintf('\n');
     
@@ -145,7 +145,7 @@ function run_all_comprehensive_v7()
     fprintf('╔═══════════════════════════════════════════════════════╗\n');
     fprintf('║  TEST CASE 4: LARGE EARTHQUAKE                        ║\n');
     fprintf('╚═══════════════════════════════════════════════════════╝\n');
-    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST4_large_earthquake_M6.9.csv', false));
+    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST4_large_earthquake_M6.9.csv'), false);
     test_count = test_count + 1;
     fprintf('\n');
     
@@ -153,7 +153,7 @@ function run_all_comprehensive_v7()
     fprintf('╔═══════════════════════════════════════════════════════╗\n');
     fprintf('║  TEST CASE 5: MIXED LOADING                           ║\n');
     fprintf('╚═══════════════════════════════════════════════════════╝\n');
-    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST5_earthquake_M6.7.csv', true, 'TEST5_hurricane_wind_50ms.csv'));
+    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST5_earthquake_M6.7.csv'), true, fullfile(folder,'TEST5_hurricane_wind_50ms.csv'));
     test_count = test_count + 1;
     fprintf('\n');
     
@@ -163,23 +163,23 @@ function run_all_comprehensive_v7()
     fprintf('╚═══════════════════════════════════════════════════════╝\n');
     
     fprintf('  [%d] Baseline (clean)\n', test_count+1);
-    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6a_baseline_clean.csv', false));
+    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6a_baseline_clean.csv'), false);
     test_count = test_count + 1;
     
     fprintf('  [%d] 10%% noise\n', test_count+1);
-    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6b_with_10pct_noise.csv', false));
+    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6b_with_10pct_noise.csv'), false);
     test_count = test_count + 1;
     
     fprintf('  [%d] 50ms latency\n', test_count+1);
-    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6c_with_50ms_latency.csv', false));
+    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6c_with_50ms_latency.csv'), false);
     test_count = test_count + 1;
     
     fprintf('  [%d] 5%% dropout\n', test_count+1);
-    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6d_with_5pct_dropout.csv', false));
+    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6d_with_5pct_dropout.csv'), false);
     test_count = test_count + 1;
     
     fprintf('  [%d] Combined stress\n', test_count+1);
-    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6e_combined_stress.csv', false));
+    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6e_combined_stress.csv'), false);
     test_count = test_count + 1;
     
     fprintf('\n╔═══════════════════════════════════════════════════════╗\n');
@@ -209,9 +209,9 @@ function run_specific_test_v7()
         case 2
             thefunc_dcr_floor_tuner_v7('el_centro', true, fullfile(folder,'TEST2_turbulent_wind_25ms.csv'));
         case 3
-            thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST3_small_earthquake_M4.5.csv', false));
+            thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST3_small_earthquake_M4.5.csv'), false);
         case 4
-            thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST4_large_earthquake_M6.9.csv', false));
+            thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST4_large_earthquake_M6.9.csv'), false);
         case 5
             thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST5_earthquake_M6.7.csv'), true, fullfile(folder,'TEST5_hurricane_wind_50ms.csv'));
         case 6
@@ -222,17 +222,17 @@ function run_specific_test_v7()
             stress = input('  Choice: ');
             
             switch stress
-                case 1, thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6a_baseline_clean.csv', false));
-                case 2, thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6b_with_10pct_noise.csv', false));
-                case 3, thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6c_with_50ms_latency.csv', false));
-                case 4, thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6d_with_5pct_dropout.csv', false));
-                case 5, thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6e_combined_stress.csv', false));
+                case 1, thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6a_baseline_clean.csv'), false);
+                case 2, thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6b_with_10pct_noise.csv'), false);
+                case 3, thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6c_with_50ms_latency.csv'), false);
+                case 4, thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6d_with_5pct_dropout.csv'), false);
+                case 5, thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6e_combined_stress.csv'), false);
                 case 6
-                    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6a_baseline_clean.csv', false));
-                    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6b_with_10pct_noise.csv', false));
-                    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6c_with_50ms_latency.csv', false));
-                    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6d_with_5pct_dropout.csv', false));
-                    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6e_combined_stress.csv', false));
+                    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6a_baseline_clean.csv'), false);
+                    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6b_with_10pct_noise.csv'), false);
+                    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6c_with_50ms_latency.csv'), false);
+                    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6d_with_5pct_dropout.csv'), false);
+                    thefunc_dcr_floor_tuner_v7(fullfile(folder,'TEST6e_combined_stress.csv'), false);
             end
         otherwise
             fprintf('Invalid choice.\n');

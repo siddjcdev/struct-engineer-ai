@@ -122,3 +122,20 @@ class PerformanceComparison:
     with_tmd: float
     improvement_pct: float
     unit: str
+
+#Fuzzy Logic Model Starts Here
+
+# Define the input data model for the API request
+@dataclass
+class BuildingState:
+    # This matches the input from your flowchart
+    current_drift: float
+    current_velocity: float
+
+# Define the output data model for the API response
+@dataclass
+class ControlOutput:
+    # This matches the output from your flowchart
+    control_force_newtons: float
+
+#Fuzzy Logic Model Ends Here

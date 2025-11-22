@@ -22,7 +22,7 @@ function thefunc_dcr_floor_tuner_v7(earthquake_name, use_wind, wind_type)
         use_wind = true;
     end
     if nargin < 3 || isempty(wind_type)
-        wind_type = 'strong_wind';
+        wind_type = 'hurricane';
     end
     
     % Call main function
@@ -540,16 +540,20 @@ function [rating, recommendation] = assess_performance_v7(dcr_improve, drift_imp
     avg_improve = (dcr_improve + drift_improve + roof_improve) / 3;
     
     if avg_improve >= 15
-        rating = '⭐⭐⭐ EXCELLENT';
+        % rating = '⭐⭐⭐ EXCELLENT';
+        rating = 'EXCELLENT';
         recommendation = 'TMD is highly effective. Recommended for implementation.';
     elseif avg_improve >= 8
-        rating = '⭐⭐ GOOD';
+        % rating = '⭐⭐ GOOD';
+        rating = 'GOOD';
         recommendation = 'TMD provides meaningful improvement. Cost-benefit analysis recommended.';
     elseif avg_improve >= 3
-        rating = '⭐ MODERATE';
+        % rating = '⭐ MODERATE';
+        rating = 'MODERATE';
         recommendation = 'TMD shows limited benefit. Consider alternatives or multiple TMDs.';
     else
-        rating = '❌ LIMITED';
+        % rating = '❌ LIMITED';
+        rating = 'LIMITED';
         recommendation = 'TMD ineffective for this scenario. Consider: (1) Multiple TMDs, (2) Active control, (3) Base isolation.';
     end
     
@@ -835,6 +839,8 @@ end
 function [wind_force, t, info] = load_real_wind_data(wind_type, building_height, dt, duration)
     if nargin < 3, dt = 0.01; end
     if nargin < 4, duration = 120; end
+
+    %wind_type = fullfile("datasets", wind_type)
     
     % Check if it's a CSV file
     if contains(wind_type, '.csv')
