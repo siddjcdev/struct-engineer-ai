@@ -8,8 +8,13 @@ import numpy as np
 import skfuzzy as fuzz
 from skfuzzy import control as ctrl
 from datetime import datetime
-
-from restapi.models.models import (
+from pathlib import Path
+import sys
+   
+# Fix path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+   
+from models import (
     TMDSimulation,
     BaselinePerformance,
     TMDResults,
@@ -20,8 +25,7 @@ from restapi.models.models import (
     InputData,
     BuildingState,
     ControlOutput
-)
-
+   )
 # ============================================================================
 # COMPREHENSIVE FUZZY LOGIC TMD CONTROLLER
 # ============================================================================
@@ -905,6 +909,3 @@ if __name__ == "__main__":
     
     # Run on port 8001
     uvicorn.run(app, host="0.0.0.0", port=8001)
-
-
-
