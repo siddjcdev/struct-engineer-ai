@@ -45,6 +45,14 @@ The codebase includes tools to create synthetic test datasets, convert real sens
    - Run create_all_6_test_datasets.m to assemble datasets for testing.
    - Run RUN_ALL_6_TESTS_WITH_DATA.m to execute the six experiments and collect results.
    - Inspect outputs (figures, numeric results) saved by the scripts to evaluate identified modal properties and tuning outcomes.
+1. Open MATLAB and add this repository folder to the MATLAB path (or change the working directory to the repository root).
+2. (Optional) Convert any real data you want to use to 50 Hz with:
+   - convert_real_data_to_50Hz
+3. (Optional) Generate the synthetic test datasets (overwrites/creates files in data/ or local workspace):
+   - create_all_6_test_datasets
+4. Run the full test suite and see results:
+   - RUN_ALL_6_TESTS_WITH_DATA
+5. To inspect or tune behavior, open the tuning function and scripts and adjust parameters such as optimization options, noise levels, or which features are compared in the cost function.
 
 ## Notes and assumptions
 
