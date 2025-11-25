@@ -6,6 +6,9 @@ curl "http://localhost:8001/" -H "Content-Type: application/json"
 # GET /health
 curl "http://localhost:8001/health" -H "Content-Type: application/json"
 ###
+# GET /fuzzylogic
+curl "http://localhost:8001/fuzzylogic" -H "Accept: application/json"
+###
 # POST /fuzzylogic (single step)
 curl -sS -X POST "http://localhost:8001/fuzzylogic?displacement=0.1&velocity=0.5&acceleration=0.2" -H "Accept: application/json"
 ###

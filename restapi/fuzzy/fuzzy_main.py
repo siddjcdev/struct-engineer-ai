@@ -486,6 +486,97 @@ async def health_check():
 # FUZZY LOGIC CONTROL ENDPOINTS (PRIMARY)
 # ============================================================================
 
+@app.get("/fuzzylogic", tags=["Fuzzy Control"])
+async def fuzzy_logic_control_from_simulation():
+    """
+    GET variant of /fuzzylogic — reads RMS inputs from data/simulation.json and runs the same controller.
+    Expects fields named (any of):
+      - rms_displacement, rms_velocity, rms_acceleration
+    or nested under keys like 'baseline', 'metrics' or 'rms'.
+    """
+    if not DATA_FILE.exists():
+        raise HTTPException(status_code=404, detail=f"Simulation file not found: {DATA_FILE}")
+
+    try:
+        with open(DATA_FILE, 'r') as f:
+            sim = json.load(f)
+
+        print("Extracting RMS values from simulation data...")
+        print("Available keys:", list(sim.keys()))
+        print("Searching for: rms_displacement, rms_velocity, [rms_acceleration]")
+        def _extract(key):
+            # direct
+            if key in sim:
+                return sim[key]
+            print(f"Key '{key}' not found directly in simulation data.")
+            # common containers
+            container = "tmd_results"
+            print(f"Checking container '{container}' for key '{key}'...")
+            if container in sim and isinstance(sim[container], dict) and key in sim[container]:
+                return sim[container][key]
+            print(f"Key '{key}' not found in containers {('tmd_results',)} or directly in simulation data.")
+            # try short name inside 'rms' container
+            short = key.replace("rms_", "")
+            if "rms" in sim and isinstance(sim["rms"], dict) and short in sim["rms"]:
+                return sim["rms"][short]
+            return None
+
+        displacement = _extract("rms_displacement")
+        velocity = _extract("rms_velocity")
+        acceleration = _extract("rms_acceleration")
+
+        if displacement is None or velocity is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Required RMS fields not found in simulation.json (rms_displacement, rms_velocity[, rms_acceleration])"
+            )
+
+        # run controller (reuse same compute & saving pattern as POST)
+        control_force = fuzzy_controller.compute(float(displacement), float(velocity), float(acceleration) if acceleration is not None else None)
+
+        response = {
+            "timestamp": datetime.now().isoformat(),
+            "source": str(DATA_FILE),
+            "computation_number": fuzzy_controller.computation_count,
+            "inputs": {
+                "displacement_m": displacement,
+                "velocity_ms": velocity,
+                "acceleration_ms2": acceleration
+            },
+            "output": {
+                "control_force_N": control_force,
+                "control_force_kN": control_force / 1000,
+                "direction": "left (negative)" if control_force < 0 else "right (positive)"
+            },
+            "controller_info": {
+                "type": "comprehensive_fuzzy_logic",
+                "displacement_range_m": fuzzy_controller.displacement_range,
+                "velocity_range_ms": fuzzy_controller.velocity_range,
+                "force_range_kN": [fuzzy_controller.force_range[0]/1000, fuzzy_controller.force_range[1]/1000]
+            }
+        }
+
+        # Save result files
+        output_filename = f"fuzzy_simulation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        output_path = FUZZY_OUTPUT_DIR / output_filename
+        with open(output_path, 'w') as f:
+            json.dump(response, f, indent=2)
+        latest_path = FUZZY_OUTPUT_DIR / "fuzzy_output_latest.json"
+        with open(latest_path, 'w') as f:
+            json.dump(response, f, indent=2)
+
+        response["saved_to"] = str(output_path)
+        response["latest_file"] = str(latest_path)
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error running fuzzy controller from simulation.json: {e}")
+
+# ...existing code...
+
 @app.post("/fuzzylogic", tags=["Fuzzy Control"])
 async def fuzzy_logic_control(
     displacement: float = Query(..., description="Inter-story drift in meters"),
