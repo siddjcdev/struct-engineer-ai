@@ -10,6 +10,7 @@ from skfuzzy import control as ctrl
 from datetime import datetime
 from pathlib import Path
 import sys
+import os
    
 # Fix path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -333,13 +334,13 @@ app = FastAPI(
 )
 
 # CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 # --- PATHS (Deployment-ready) ---
 ROOT_PATH = Path(__file__).parent

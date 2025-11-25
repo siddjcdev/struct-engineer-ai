@@ -1,0 +1,36 @@
+
+# GET /
+curl "http://localhost:8001/" -H "Content-Type: application/json"
+###
+
+# GET /health
+curl "http://localhost:8001/health" -H "Content-Type: application/json"
+###
+# POST /fuzzylogic (single step)
+curl -sS -X POST "http://localhost:8001/fuzzylogic?displacement=0.1&velocity=0.5&acceleration=0.2" -H "Accept: application/json"
+###
+curl -sS -X POST "http://localhost:8001/fuzzylogic?displacement=0.10875937299926325&velocity=0.15893610963840293&acceleration=0.6091901117602654" -H "Accept: application/json"
+###
+# POST /fuzzylogic-batch (repeat query params for arrays)
+curl -sS -X POST "http://localhost:8001/fuzzylogic-batch?displacements=0.1&displacements=0.05&displacements=0.0&velocities=0.5&velocities=0.2&velocities=-0.1&accelerations=0.2&accelerations=0.1&accelerations=0.0" -H "Accept: application/json"
+###
+
+# GET /fuzzy-stats
+curl "http://localhost:8001/fuzzy-stats" -H "Accept: application/json"
+###
+
+# GET /fuzzy-history (example: last 10)
+curl "http://localhost:8001/fuzzy-history?last_n=10" -H "Accept: application/json"
+###
+# GET /simulation
+curl "http://localhost:8001/simulation" -H "Accept: application/json"
+###
+# GET /baseline
+curl "http://localhost:8001/baseline" -H "Accept: application/json"
+###
+# GET /tmd-results
+curl "http://localhost:8001/tmd-results" -H "Accept: application/json"
+###
+# POST /reload
+curl -sS -X POST "http://localhost:8001/reload" -H "Accept: application/json"
+###
