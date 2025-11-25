@@ -1,0 +1,30 @@
+{
+  "timestamp": "2025-11-25T14:22:00.220976",
+  "source": "C:\\Dev\\dAmpIng26\\git\\struct-engineer-ai\\restapi\\fuzzy\\data\\simulation.json",
+  "computation_number": 1,
+  "inputs": {
+    "displacement_m": 0.10875937299926325,
+    "velocity_ms": 0.15893610963840293,
+    "acceleration_ms2": 0.6091901117602654
+  },
+  "output": {
+    "control_force_N": -27669.243572129133,
+    "control_force_kN": -27.669243572129133,
+    "direction": "left (negative)"
+  },
+  "controller_info": {
+    "type": "comprehensive_fuzzy_logic",
+    "displacement_range_m": [
+      -0.5,
+      0.5
+    ],
+    "velocity_range_ms": [
+      -2.0,
+      2.0
+    ],
+    "force_range_kN": [
+      -100.0,
+      100.0
+    ]
+  }
+}

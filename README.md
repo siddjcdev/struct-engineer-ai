@@ -35,6 +35,16 @@ The codebase includes tools to create synthetic test datasets, convert real sens
 
 ## Usage
 
+1. Requirements
+   - MATLAB (a recent release recommended)
+   - Signal Processing Toolbox is helpful (for resampling, filtering, PSD)
+   - The repository expects acceleration time-series data in the dataset format prepared by create_all_6_test_datasets.m / convert_real_data_to_50Hz.m.
+
+2. Typical workflow
+   - Use convert_real_data_to_50Hz.m to standardize raw recordings to 50 Hz if needed.
+   - Run create_all_6_test_datasets.m to assemble datasets for testing.
+   - Run RUN_ALL_6_TESTS_WITH_DATA.m to execute the six experiments and collect results.
+   - Inspect outputs (figures, numeric results) saved by the scripts to evaluate identified modal properties and tuning outcomes.
 1. Open MATLAB and add this repository folder to the MATLAB path (or change the working directory to the repository root).
 2. (Optional) Convert any real data you want to use to 50 Hz with:
    - convert_real_data_to_50Hz

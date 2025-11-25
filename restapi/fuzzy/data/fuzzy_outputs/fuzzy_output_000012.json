@@ -1,0 +1,29 @@
+{
+  "timestamp": "2025-11-25T12:56:59.561348",
+  "computation_number": 12,
+  "inputs": {
+    "displacement_m": 0.1,
+    "velocity_ms": 0.5,
+    "acceleration_ms2": 0.2
+  },
+  "output": {
+    "control_force_N": -27089.947089947287,
+    "control_force_kN": -27.089947089947287,
+    "direction": "left (negative)"
+  },
+  "controller_info": {
+    "type": "comprehensive_fuzzy_logic",
+    "displacement_range_m": [
+      -0.5,
+      0.5
+    ],
+    "velocity_range_ms": [
+      -2.0,
+      2.0
+    ],
+    "force_range_kN": [
+      -100.0,
+      100.0
+    ]
+  }
+}

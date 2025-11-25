@@ -9,7 +9,7 @@
 % Output: 6 ready-to-use CSV files for each test case
 % ============================================================
 
-function create_all_6_test_datasets_FIXED()
+function create_all_6_test_datasets()
     
     fprintf('\n╔════════════════════════════════════════════════════════╗\n');
     fprintf('║  CREATING ALL 6 TEST CASE DATASETS (dt=0.02s)         ║\n');
@@ -24,50 +24,65 @@ function create_all_6_test_datasets_FIXED()
     fprintf('Time step: %.3f seconds (50 Hz)\n', dt);
     fprintf('Duration: %.1f seconds\n', duration);
     fprintf('Total points: %d\n\n', N_points);
-    
+        
     %% TEST CASE 1: STATIONARY WIND
     fprintf('Creating Test Case 1: Stationary Wind...\n');
+    
+    % Generate wind data
     wind_stationary = create_stationary_wind_realistic(t);
-    writematrix([t, wind_stationary], 'TEST1_stationary_wind_12ms.csv');
-    fprintf('  ✓ Saved: TEST1_stationary_wind_12ms.csv\n');
+    
+    % Define folder and filename
+    folder = 'datasets'; % relative folder name
+    filename = 'TEST1_stationary_wind_12ms.csv';
+    
+    % Ensure the folder exists (create if not)
+    if ~exist(folder, 'dir')
+        mkdir(folder);
+    end
+    
+    % Save file into the folder
+    writematrix([t, wind_stationary], fullfile(folder, filename));
+    
+    fprintf('  ✓ Saved: %s\n', filename);
     fprintf('    Mean: %.2f m/s, Std: %.2f m/s, TI: %.1f%%\n\n', ...
         mean(wind_stationary), std(wind_stationary), 100*std(wind_stationary)/mean(wind_stationary));
+
     
     %% TEST CASE 2: TURBULENT WIND
     fprintf('Creating Test Case 2: Turbulent/Unstationary Wind...\n');
     wind_turbulent = create_turbulent_wind_realistic(t);
-    writematrix([t, wind_turbulent], 'TEST2_turbulent_wind_25ms.csv');
-    fprintf('  ✓ Saved: TEST2_turbulent_wind_25ms.csv\n');
+    writematrix([t, wind_turbulent],  fullfile(folder,'TEST2_turbulent_wind_25ms.csv'));
+    fprintf('  ✓ Saved: datasets\TEST2_turbulent_wind_25ms.csv\n');
     fprintf('    Mean: %.2f m/s, Std: %.2f m/s, TI: %.1f%%\n\n', ...
         mean(wind_turbulent), std(wind_turbulent), 100*std(wind_turbulent)/mean(wind_turbulent));
     
     %% TEST CASE 3: SMALL EARTHQUAKE (M 4.5)
     fprintf('Creating Test Case 3: Small Earthquake (M 4.5)...\n');
     [ag_small, pga_small] = create_small_earthquake_realistic(t);
-    writematrix([t, ag_small], 'TEST3_small_earthquake_M4.5.csv');
-    fprintf('  ✓ Saved: TEST3_small_earthquake_M4.5.csv\n');
+    writematrix([t, ag_small], fullfile(folder,'TEST3_small_earthquake_M4.5.csv'));
+    fprintf('  ✓ Saved: datasets\TEST3_small_earthquake_M4.5.csv\n');
     fprintf('    Magnitude: ~M 4.5, PGA: %.3f m/s² (%.2fg)\n\n', pga_small, pga_small/9.81);
     
     %% TEST CASE 4: LARGE EARTHQUAKE (M 6.9) - FIXED!
     fprintf('Creating Test Case 4: Large Earthquake (M 6.9)...\n');
     fprintf('  *** FIX #2 APPLIED: PGA = 0.4g (was 1.0g) ***\n');
     [ag_large, pga_large] = create_large_earthquake_realistic(t);
-    writematrix([t, ag_large], 'TEST4_large_earthquake_M6.9.csv');
-    fprintf('  ✓ Saved: TEST4_large_earthquake_M6.9.csv\n');
+    writematrix([t, ag_large], fullfile(folder,'TEST4_large_earthquake_M6.9.csv'));
+    fprintf('  ✓ Saved: datasets\TEST4_large_earthquake_M6.9.csv\n');
     fprintf('    Magnitude: ~M 6.9, PGA: %.3f m/s² (%.2fg) ✓ FIXED!\n\n', pga_large, pga_large/9.81);
     
     %% TEST CASE 5: MIXED SEISMIC-WIND
     fprintf('Creating Test Case 5: Mixed Seismic-Wind Input...\n');
     % Use large earthquake
     ag_mixed = ag_large;
-    writematrix([t, ag_mixed], 'TEST5_earthquake_M6.7.csv');
-    fprintf('  ✓ Saved: TEST5_earthquake_M6.7.csv\n');
+    writematrix([t, ag_mixed], fullfile(folder, 'TEST5_earthquake_M6.7.csv'));
+    fprintf('  ✓ Saved: datasets\TEST5_earthquake_M6.7.csv\n');
     fprintf('    PGA: %.3f m/s² (%.2fg)\n', pga_large, pga_large/9.81);
     
     % Use hurricane wind
     wind_hurricane = create_hurricane_wind_realistic(t);
-    writematrix([t, wind_hurricane], 'TEST5_hurricane_wind_50ms.csv');
-    fprintf('  ✓ Saved: TEST5_hurricane_wind_50ms.csv\n');
+    writematrix([t, wind_hurricane], fullfile(folder,'TEST5_hurricane_wind_50ms.csv'));
+    fprintf('  ✓ Saved: datasets\TEST5_hurricane_wind_50ms.csv\n');
     fprintf('    Mean: %.2f m/s, Max: %.2f m/s\n\n', mean(wind_hurricane), max(wind_hurricane));
     
     %% TEST CASE 6: STRESS/NOISE/LATENCY TESTS
@@ -75,30 +90,30 @@ function create_all_6_test_datasets_FIXED()
     
     % 6a: Clean baseline
     ag_baseline = ag_large;
-    writematrix([t, ag_baseline], 'TEST6a_baseline_clean.csv');
-    fprintf('  ✓ Saved: TEST6a_baseline_clean.csv\n');
+    writematrix([t, ag_baseline], fullfile(folder,'TEST6a_baseline_clean.csv'));
+    fprintf('  ✓ Saved: datasets\TEST6a_baseline_clean.csv\n');
     
     % 6b: With 10% noise
     ag_noise = add_white_noise(ag_baseline, 0.10);
-    writematrix([t, ag_noise], 'TEST6b_with_10pct_noise.csv');
-    fprintf('  ✓ Saved: TEST6b_with_10pct_noise.csv (10%% white noise)\n');
+    writematrix([t, ag_noise], fullfile(folder,'TEST6b_with_10pct_noise.csv'));
+    fprintf('  ✓ Saved: datasets\TEST6b_with_10pct_noise.csv (10%% white noise)\n');
     
     % 6c: With 50ms latency
     ag_latency = add_latency(ag_baseline, dt, 0.05);
-    writematrix([t, ag_latency], 'TEST6c_with_50ms_latency.csv');
-    fprintf('  ✓ Saved: TEST6c_with_50ms_latency.csv (50ms delay)\n');
+    writematrix([t, ag_latency], fullfile(folder,'TEST6c_with_50ms_latency.csv'));
+    fprintf('  ✓ Saved: datasets\TEST6c_with_50ms_latency.csv (50ms delay)\n');
     
     % 6d: With 5% dropout
     ag_dropout = add_dropout(ag_baseline, 0.05);
-    writematrix([t, ag_dropout], 'TEST6d_with_5pct_dropout.csv');
-    fprintf('  ✓ Saved: TEST6d_with_5pct_dropout.csv (5%% dropout, interpolated)\n');
+    writematrix([t, ag_dropout], fullfile(folder,'TEST6d_with_5pct_dropout.csv'));
+    fprintf('  ✓ Saved: datasets\TEST6d_with_5pct_dropout.csv (5%% dropout, interpolated)\n');
     
     % 6e: Combined stress
     ag_combined = add_white_noise(ag_baseline, 0.15);
     ag_combined = add_latency(ag_combined, dt, 0.05);
     ag_combined = add_dropout(ag_combined, 0.08);
-    writematrix([t, ag_combined], 'TEST6e_combined_stress.csv');
-    fprintf('  ✓ Saved: TEST6e_combined_stress.csv (15%% noise + 50ms latency + 8%% dropout)\n\n');
+    writematrix([t, ag_combined], fullfile(folder,'TEST6e_combined_stress.csv'));
+    fprintf('  ✓ Saved: datasets\TEST6e_combined_stress.csv (15%% noise + 50ms latency + 8%% dropout)\n\n');
     
     %% SUMMARY
     fprintf('╔════════════════════════════════════════════════════════╗\n');
