@@ -76,24 +76,82 @@ def test_comparison_with_fuzzy():
     print("Computing control surfaces...")
     nn_forces = np.zeros((n_points, n_points))
     fuzzy_forces = np.zeros((n_points, n_points))
+    fuzzy_failures = 0
     
     for i, disp in enumerate(displacements):
         for j, vel in enumerate(velocities):
             nn_forces[j, i] = nn_controller.compute(disp, vel)
-            fuzzy_forces[j, i] = fuzzy_controller.compute(disp, vel)
+            
+            # Try fuzzy controller with error handling
+            try:
+                fuzzy_force = fuzzy_controller.compute(disp, vel)
+                # Check if fuzzy returned a valid result
+                if np.isnan(fuzzy_force) or np.isinf(fuzzy_force):
+                    fuzzy_force = 0.0
+                    fuzzy_failures += 1
+                fuzzy_forces[j, i] = fuzzy_force
+            except Exception as e:
+                fuzzy_forces[j, i] = 0.0
+                fuzzy_failures += 1
     
-    # Calculate error
-    absolute_error = np.abs(nn_forces - fuzzy_forces)
-    relative_error = np.abs((nn_forces - fuzzy_forces) / (fuzzy_forces + 1e-8)) * 100
+    if fuzzy_failures > 0:
+        print(f"  ⚠️  Fuzzy controller failed for {fuzzy_failures}/{n_points*n_points} points")
     
     print("  ✅ Surfaces computed")
     print()
     
+    # Calculate error - only for points where forces are significant
+    # For structural control, forces < 5 kN don't meaningfully affect building response
+    # This prevents small denominators from inflating relative error percentages
+    significant_mask = np.abs(fuzzy_forces) > 5.0
+    n_significant = np.sum(significant_mask)
+    
+    if n_significant == 0:
+        print("  ❌ Error: No significant control forces to compare!")
+        print("     (All forces < 5 kN threshold)")
+        return False
+    
+    if n_significant < 50:
+        print(f"  ⚠️  Warning: Only {n_significant} points with significant forces")
+    
+    absolute_error = np.abs(nn_forces - fuzzy_forces)
+    
+    # Calculate relative error only for significant force points
+    relative_error_significant = np.abs(
+        (nn_forces[significant_mask] - fuzzy_forces[significant_mask]) / fuzzy_forces[significant_mask]
+    ) * 100
+    
+    # Also calculate error statistics for ALL points (not just significant)
+    all_points_mean_abs = np.mean(absolute_error)
+    all_points_max_abs = np.max(absolute_error)
+    
     print("Error Statistics:")
-    print(f"  Mean absolute error: {np.mean(absolute_error):.2f} kN")
-    print(f"  Max absolute error: {np.max(absolute_error):.2f} kN")
-    print(f"  Mean relative error: {np.mean(relative_error):.1f}%")
-    print(f"  Max relative error: {np.max(relative_error):.1f}%")
+    print(f"  Points with significant forces (>5 kN): {n_significant}/{n_points*n_points}")
+    print(f"  Mean absolute error (all points): {all_points_mean_abs:.2f} kN")
+    print(f"  Max absolute error (all points): {all_points_max_abs:.2f} kN")
+    
+    if n_significant > 0:
+        print(f"  Mean relative error (significant forces): {np.mean(relative_error_significant):.1f}%")
+        print(f"  Max relative error (significant forces): {np.max(relative_error_significant):.1f}%")
+    print()
+    
+    # Determine pass/fail
+    mean_abs_error = all_points_mean_abs
+    mean_rel_error = np.mean(relative_error_significant) if n_significant > 0 else 0
+    
+    passed = True
+    if mean_abs_error > 10.0:
+        print(f"  ⚠️  Mean absolute error too high: {mean_abs_error:.2f} kN > 10 kN threshold")
+        passed = False
+    if n_significant > 0 and mean_rel_error > 15.0:
+        print(f"  ⚠️  Mean relative error too high: {mean_rel_error:.1f}% > 15% threshold")
+        passed = False
+    if fuzzy_failures > n_points * n_points * 0.3:
+        print(f"  ⚠️  Too many fuzzy controller failures: {fuzzy_failures}/{n_points*n_points}")
+        passed = False
+    
+    if passed:
+        print(f"  ✅ Errors within acceptable range")
     print()
     
     # Visualize comparison
@@ -106,7 +164,7 @@ def test_comparison_with_fuzzy():
     im1 = axes[0, 0].contourf(D, V, fuzzy_forces, levels=20, cmap='RdBu_r')
     axes[0, 0].set_xlabel('Displacement (m)')
     axes[0, 0].set_ylabel('Velocity (m/s)')
-    axes[0, 0].set_title('Fuzzy Logic Controller')
+    axes[0, 0].set_title(f'Fuzzy Logic Controller ({fuzzy_failures} failures)')
     plt.colorbar(im1, ax=axes[0, 0], label='Force (kN)')
     
     # Neural network surface
@@ -120,14 +178,32 @@ def test_comparison_with_fuzzy():
     im3 = axes[1, 0].contourf(D, V, absolute_error, levels=20, cmap='YlOrRd')
     axes[1, 0].set_xlabel('Displacement (m)')
     axes[1, 0].set_ylabel('Velocity (m/s)')
-    axes[1, 0].set_title('Absolute Error (|NN - Fuzzy|)')
+    axes[1, 0].set_title(f'Absolute Error (Mean: {np.mean(absolute_error):.2f} kN)')
     plt.colorbar(im3, ax=axes[1, 0], label='Error (kN)')
     
-    # Scatter plot comparison
-    axes[1, 1].scatter(fuzzy_forces.flatten(), nn_forces.flatten(), alpha=0.5, s=20)
-    min_val = min(fuzzy_forces.min(), nn_forces.min())
-    max_val = max(fuzzy_forces.max(), nn_forces.max())
-    axes[1, 1].plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='Perfect Match')
+    # Scatter plot comparison - separate by significance
+    if n_significant > 0:
+        axes[1, 1].scatter(
+            fuzzy_forces[significant_mask].flatten(), 
+            nn_forces[significant_mask].flatten(), 
+            alpha=0.6, s=30, label=f'Significant (>5kN, n={n_significant})', color='blue'
+        )
+    
+    # Show low-force points separately
+    low_force_mask = ~significant_mask
+    if np.sum(low_force_mask) > 0:
+        axes[1, 1].scatter(
+            fuzzy_forces[low_force_mask].flatten(),
+            nn_forces[low_force_mask].flatten(),
+            alpha=0.3, s=10, color='gray', marker='.', label=f'Low force (<5kN)'
+        )
+    
+    # Perfect match line
+    if n_significant > 0:
+        min_val = min(fuzzy_forces[significant_mask].min(), nn_forces[significant_mask].min())
+        max_val = max(fuzzy_forces[significant_mask].max(), nn_forces[significant_mask].max())
+        axes[1, 1].plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='Perfect Match')
+    
     axes[1, 1].set_xlabel('Fuzzy Logic Force (kN)')
     axes[1, 1].set_ylabel('Neural Network Force (kN)')
     axes[1, 1].set_title('Force Comparison')
@@ -139,11 +215,19 @@ def test_comparison_with_fuzzy():
     print("  ✅ Saved controller_comparison.png")
     plt.close()
     
+    plt.tight_layout()
+    plt.savefig('controller_comparison.png', dpi=150, bbox_inches='tight')
+    print("  ✅ Saved controller_comparison.png")
+    plt.close()
+    
     print()
-    print("✅ Comparison test passed")
+    if passed:
+        print("✅ Comparison test passed")
+    else:
+        print("❌ Comparison test failed")
     print()
     
-    return True
+    return passed
 
 
 def test_inference_speed():

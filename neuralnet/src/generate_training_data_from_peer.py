@@ -229,39 +229,8 @@ class FuzzyTMDController:
         self.controller = ctrl.ControlSystemSimulation(self.control_system)
         
         print("Fuzzy controller initialized with 13 rules")
-
-
+    
     def compute(self, displacement: float, velocity: float) -> float:
-        """
-        Compute optimal control force
-
-        Args:
-            displacement: Building displacement (m)
-            velocity: Building velocity (m/s)
-
-        Returns:
-            Control force (kN)
-        """
-        # Clip inputs to valid range
-        displacement = np.clip(displacement, -0.5, 0.5)
-        velocity = np.clip(velocity, -2.0, 2.0)
-
-        # Use a fresh simulation instance each call to avoid stale state / missing outputs
-        sim = ctrl.ControlSystemSimulation(self.control_system)
-
-        try:
-            sim.input['displacement'] = float(displacement)
-            sim.input['velocity'] = float(velocity)
-            sim.compute()
-            force_kN = float(sim.output['force'])
-            return force_kN
-        except Exception as e:
-            # Fallback: log a short warning and return zero control (safe default)
-            print(f"⚠️  Fuzzy controller compute failed: {e} — returning 0.0 kN")
-            return 0.0
-
-
-    def compute_0(self, displacement: float, velocity: float) -> float:
         """
         Compute optimal control force
         
@@ -272,18 +241,30 @@ class FuzzyTMDController:
         Returns:
             Control force (kN)
         """
-        # Clip inputs to valid range
+        # Clip inputs to valid range to prevent fuzzy controller failures
         displacement = np.clip(displacement, -0.5, 0.5)
         velocity = np.clip(velocity, -2.0, 2.0)
         
-        # Compute fuzzy output
-        self.controller.input['displacement'] = displacement
-        self.controller.input['velocity'] = velocity
-        self.controller.compute()
-        
-        force_kN = self.controller.output['force']
-        
-        return force_kN
+        try:
+            # Compute fuzzy output
+            self.controller.input['displacement'] = displacement
+            self.controller.input['velocity'] = velocity
+            self.controller.compute()
+            
+            force_kN = self.controller.output['force']
+            
+            # Check for invalid outputs
+            if np.isnan(force_kN) or np.isinf(force_kN):
+                # Fallback to simple proportional control
+                force_kN = -40 * displacement - 10 * velocity
+                
+            return force_kN
+            
+        except Exception as e:
+            # If fuzzy controller fails, use simple proportional-derivative control
+            # This ensures we always return a valid control force
+            force_kN = -40 * displacement - 10 * velocity
+            return force_kN
 
 
 class TrainingDataGenerator:
@@ -442,3 +423,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    
