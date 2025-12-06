@@ -275,7 +275,7 @@ async def nn_predict_single(request: PredictSingleRequest):
     **Example for MATLAB:**
     ```matlab
     % Single prediction
-    url = 'http://localhost:8000/nn/predict';
+    url = 'http://0.0.0.0:8000/nn/predict';
     data = struct('displacement', 0.15, 'velocity', 0.8);
     options = weboptions('RequestMethod', 'post', 'MediaType', 'application/json');
     response = webread(url, data, options);
@@ -324,7 +324,7 @@ async def nn_predict_batch(request: PredictBatchRequest):
     **Example for MATLAB:**
     ```matlab
     % Batch prediction (MUCH FASTER for time series!)
-    url = 'http://localhost:8000/nn/predict-batch';
+    url = 'http://0.0.0.0:8000/nn/predict-batch';
     data = struct('displacements', roof_disp, 'velocities', roof_vel);
     options = weboptions('RequestMethod', 'post', 'MediaType', 'application/json');
     response = webread(url, data, options);
@@ -585,7 +585,7 @@ if __name__ == "__main__":
     print("\n" + "="*70)
     print("TMD Simulation API with Neural Network Inference")
     print("="*70)
-    print("Starting server on http://localhost:8080")
-    print("API Documentation: http://localhost:8080/docs")
+    print("Starting server on http://0.0.0.0:8080")
+    print("API Documentation: http://0.0.0.0:8080/docs")
     print("="*70 + "\n")
-    uvicorn.run(app, host="localhost", port=8080)
+    uvicorn.run(app, host="0.0.0.0", port=8080)
