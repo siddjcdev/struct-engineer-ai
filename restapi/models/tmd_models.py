@@ -33,7 +33,7 @@ class InputData:
 @dataclass
 class BaselinePerformance:
     # Pydantic's Field(...) with a description is converted to metadata
-    DCR: float = field(metadata={"description": "Demand-to-Capacity Ratio"})
+    DCR: float = field(metadata={"description": "Drift Concentration Ratio"})
     max_drift: float
     max_roof: float
     rms_roof: float

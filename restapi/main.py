@@ -8,7 +8,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import time
-from models import (
+from models.tmd_models import (
     TMDSimulation,
     BaselinePerformance,
     TMDResults,
@@ -139,10 +139,16 @@ app = FastAPI(
 
 # Global variables
 DATA_FILE = Path("data/simulation.json")
-MODEL_FILE = Path("tmd_trained_model_peer.pth")
+#MODEL_FILE = (Path(__file__).parent.parent / "neuralnet" / "src" / "models" / "tmd_trained_model_peer.pth").resolve()
+MODEL_FILE = Path("models/tmd_trained_model_peer.pth")
+
 simulation_data: Optional[TMDSimulation] = None
 nn_controller: Optional[NeuralTMDController] = None
 
+# Debug: print resolved path
+#C:\Dev\dAmpIng26\git\struct-engineer-ai\neuralnet\src\models\tmd_trained_model_peer.pth
+print(f"Model file path: {MODEL_FILE}")
+print(f"Model file exists: {MODEL_FILE.exists()}")
 
 # ============================================================================
 # Startup Functions
@@ -579,7 +585,7 @@ if __name__ == "__main__":
     print("\n" + "="*70)
     print("TMD Simulation API with Neural Network Inference")
     print("="*70)
-    print("Starting server on http://localhost:8000")
-    print("API Documentation: http://localhost:8000/docs")
+    print("Starting server on http://localhost:8080")
+    print("API Documentation: http://localhost:8080/docs")
     print("="*70 + "\n")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="localhost", port=8080)
