@@ -3,11 +3,19 @@ from fastapi.responses import JSONResponse
 from typing import List, Optional
 from pydantic import BaseModel
 import json
+import shutil
+import skfuzzy as fuzz
+from skfuzzy import control as ctrl
+from datetime import datetime
 from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
 import time
+import sys
+import os
+
+import fuzzy.FuzzyTMD
 from models.tmd_models import (
     TMDSimulation,
     BaselinePerformance,
@@ -16,9 +24,17 @@ from models.tmd_models import (
     Improvements,
     TimeSeriesData,
     PerformanceComparison,
-    InputData
+    InputData,
+    BuildingState,
+    ControlOutput
 )
 
+
+class FuzzyBatchRequest(BaseModel):
+    """Request model for batch predictions"""
+    displacements: List[float]  # meters, "Array of displacements (m)"
+    velocities: List[float]     # m/s, "Array of velocities (m/s)"
+    accelerations: Optional[List[float]]  # m/s², "Array of accelerations (m/s²)"
 
 # ============================================================================
 # Neural Network Model Definition
@@ -142,8 +158,28 @@ DATA_FILE = Path("data/simulation.json")
 #MODEL_FILE = (Path(__file__).parent.parent / "neuralnet" / "src" / "models" / "tmd_trained_model_peer.pth").resolve()
 MODEL_FILE = Path("models/tmd_trained_model_peer.pth")
 
+# --- PATHS (Deployment-ready) ---
+ROOT_PATH = Path(__file__).parent
+# For deployment: Use environment variable if available, otherwise use a relative path
+MATLAB_OUTPUT_DIR_ENV = os.getenv('MATLAB_OUTPUT_DIR', None)
+if MATLAB_OUTPUT_DIR_ENV:
+    MATLAB_OUTPUT_DIR = Path(MATLAB_OUTPUT_DIR_ENV)
+else:
+    # For local development, use the original path
+    # For deployment, this will just be skipped
+    MATLAB_OUTPUT_DIR = Path(r"C:\Dev\dAmpIng26\shared_data\results")
+FUZZY_OUTPUT_DIR = ROOT_PATH / "data" / "fuzzy_outputs"
+FUZZY_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 simulation_data: Optional[TMDSimulation] = None
 nn_controller: Optional[NeuralTMDController] = None
+
+# Initialize comprehensive fuzzy controller
+fuzzy_controller = fuzzy.FuzzyTMD.FuzzyTMDController(
+    displacement_range=(-0.5, 0.5),    # ±50 cm
+    velocity_range=(-2.0, 2.0),         # ±2 m/s
+    force_range=(-100000, 100000)       # ±100 kN
+)
 
 # Debug: print resolved path
 #C:\Dev\dAmpIng26\git\struct-engineer-ai\neuralnet\src\models\tmd_trained_model_peer.pth
@@ -153,19 +189,94 @@ print(f"Model file exists: {MODEL_FILE.exists()}")
 # ============================================================================
 # Startup Functions
 # ============================================================================
+
+
+
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Load data and model on startup"""
+    print("="*70)
+    print("Starting TMD Simulation API with Neural Network Inference")
+    print("="*70)
+    load_simulation_data()
+    load_neural_network()
+    print("\n" + "="*70)
+    print("TMD FUZZY CONTROL API - READY FOR DEPLOYMENT")
+    print("="*70)
+    print(f"✅ Fuzzy Controller: Active")
+    print(f"✅ Force Range: ±{fuzzy_controller.force_range[1]/1000:.1f} kN")
+    print(f"✅ Output Directory: {FUZZY_OUTPUT_DIR}")
+    print(f"{'✅' if simulation_data else '⚠️ '} Simulation Data: {'Loaded' if simulation_data else 'Not Available'}")
+    print("="*70 + "\n")
+    print("="*70)
+    print("✅ API Ready")
+    print("="*70)
+
+    
+    
+# ============================================================================
+# DATA LOADING FUNCTIONS
+# ============================================================================
+
+def _update_latest_simulation():
+    """Find the latest MATLAB simulation file and copy it to data/simulation.json"""
+    
+    # Skip MATLAB file loading on deployment
+    if not MATLAB_OUTPUT_DIR.exists():
+        print("⚠️  MATLAB output directory not found. Skipping simulation data load.")
+        print("   (This is normal for deployment - fuzzy controller will still work!)")
+        return True
+        
+    if not MATLAB_OUTPUT_DIR.is_dir():
+        print(f"⚠️  Not a directory: {MATLAB_OUTPUT_DIR}")
+        return False
+
+    search_dir = MATLAB_OUTPUT_DIR
+    pattern = "tmd_v7_simulation_*.json"
+    
+    try:
+        simulation_files = list(search_dir.glob(pattern))
+        
+        if not simulation_files:
+            print(f"Warning: No simulation files found in '{search_dir}'. Using existing data.")
+            return True
+
+        latest_file = max(simulation_files, key=lambda p: p.stat().st_mtime)
+        
+        DATA_FILE.parent.mkdir(exist_ok=True)
+        
+        shutil.copy2(latest_file, DATA_FILE)
+        print(f"Successfully updated '{DATA_FILE.name}' with data from '{latest_file.name}'")
+        return True
+
+    except Exception as e:
+        print(f"An unexpected error occurred during simulation file update: {e}")
+        return False
+
+
 def load_simulation_data():
-    """Load simulation data from JSON file"""
+    """Update and load simulation data from JSON file"""
     global simulation_data
+    
+    success = _update_latest_simulation()
+    
+    if not success and not DATA_FILE.exists():
+        print("⚠️  No simulation data available. Fuzzy controller will still work!")
+        return
+
     try:
         with open(DATA_FILE, 'r') as f:
             data = json.load(f)
             simulation_data = TMDSimulation(**data)
             print("✅ Simulation data loaded successfully.")
     except FileNotFoundError:
-        print(f"⚠️  Warning: {DATA_FILE} not found. Simulation endpoints will return empty responses.")
+        print(f"⚠️  {DATA_FILE} not found. Simulation endpoints will return 404.")
+        print("   Fuzzy control endpoints will still work!")
         simulation_data = None
     except Exception as e:
-        print(f"❌ Error loading simulation data: {e}")
+        print(f"Error loading simulation data: {e}")
         simulation_data = None
 
 
@@ -186,20 +297,6 @@ def load_neural_network():
         nn_controller = None
         return False
 
-
-@app.on_event("startup")
-async def startup_event():
-    """Load data and model on startup"""
-    print("="*70)
-    print("Starting TMD Simulation API with Neural Network Inference")
-    print("="*70)
-    load_simulation_data()
-    load_neural_network()
-    print("="*70)
-    print("✅ API Ready")
-    print("="*70)
-
-
 # ============================================================================
 # General Endpoints
 # ============================================================================
@@ -209,8 +306,16 @@ async def root():
     return {
         "message": "TMD Simulation API with Neural Network Inference",
         "version": "2.0.0",
+        "status": "ready",
+        "fuzzy_controller": "active",
+        "simulation_data": "available" if simulation_data else "not_loaded",
         "endpoints": {
+            "fuzzy_control": "/fuzzylogic",
+            "fuzzy_batch": "/fuzzylogic-batch",
+            "fuzzy_stats": "/fuzzy-stats",
             "simulation": "/simulation",
+            "health": "/health",
+            "docs": "/docs",
             "baseline": "/baseline",
             "tmd_results": "/tmd-results",
             "tmd_config": "/tmd-config",
@@ -230,10 +335,257 @@ async def health_check():
     """Health check endpoint"""
     return {
         "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "fuzzy_controller": "active",
+        "computations": fuzzy_controller.computation_count,
         "data_loaded": simulation_data is not None,
         "nn_model_loaded": nn_controller is not None
     }
 
+
+# ============================================================================
+# FUZZY LOGIC CONTROL ENDPOINTS (PRIMARY)
+# ============================================================================
+
+@app.get("/fuzzylogic", tags=["Fuzzy Control"])
+async def fuzzy_logic_control_from_simulation():
+    """
+    GET variant of /fuzzylogic — reads RMS inputs from data/simulation.json and runs the same controller.
+    Expects fields named (any of):
+      - rms_displacement, rms_velocity, rms_acceleration
+    or nested under keys like 'baseline', 'metrics' or 'rms'.
+    """
+    if not DATA_FILE.exists():
+        raise HTTPException(status_code=404, detail=f"Simulation file not found: {DATA_FILE}")
+
+    try:
+        with open(DATA_FILE, 'r') as f:
+            sim = json.load(f)
+
+        print("Extracting RMS values from simulation data...")
+        print("Available keys:", list(sim.keys()))
+        print("Searching for: rms_displacement, rms_velocity, [rms_acceleration]")
+        def _extract(key):
+            # direct
+            if key in sim:
+                return sim[key]
+            print(f"Key '{key}' not found directly in simulation data.")
+            # common containers
+            container = "tmd_results"
+            print(f"Checking container '{container}' for key '{key}'...")
+            if container in sim and isinstance(sim[container], dict) and key in sim[container]:
+                return sim[container][key]
+            print(f"Key '{key}' not found in containers {('tmd_results',)} or directly in simulation data.")
+            # try short name inside 'rms' container
+            short = key.replace("rms_", "")
+            if "rms" in sim and isinstance(sim["rms"], dict) and short in sim["rms"]:
+                return sim["rms"][short]
+            return None
+
+        displacement = _extract("rms_displacement")
+        velocity = _extract("rms_velocity")
+        acceleration = _extract("rms_acceleration")
+
+        if displacement is None or velocity is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Required RMS fields not found in simulation.json (rms_displacement, rms_velocity[, rms_acceleration])"
+            )
+
+        # run controller (reuse same compute & saving pattern as POST)
+        control_force = fuzzy_controller.compute(float(displacement), float(velocity), float(acceleration) if acceleration is not None else None)
+
+        response = {
+            "timestamp": datetime.now().isoformat(),
+            "source": str(DATA_FILE),
+            "computation_number": fuzzy_controller.computation_count,
+            "inputs": {
+                "displacement_m": displacement,
+                "velocity_ms": velocity,
+                "acceleration_ms2": acceleration
+            },
+            "output": {
+                "control_force_N": control_force,
+                "control_force_kN": control_force / 1000,
+                "direction": "left (negative)" if control_force < 0 else "right (positive)"
+            },
+            "controller_info": {
+                "type": "comprehensive_fuzzy_logic",
+                "displacement_range_m": fuzzy_controller.displacement_range,
+                "velocity_range_ms": fuzzy_controller.velocity_range,
+                "force_range_kN": [fuzzy_controller.force_range[0]/1000, fuzzy_controller.force_range[1]/1000]
+            }
+        }
+
+        # Save result files
+        output_filename = f"fuzzy_simulation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        output_path = FUZZY_OUTPUT_DIR / output_filename
+        with open(output_path, 'w') as f:
+            json.dump(response, f, indent=2)
+        latest_path = FUZZY_OUTPUT_DIR / "fuzzy_output_latest.json"
+        with open(latest_path, 'w') as f:
+            json.dump(response, f, indent=2)
+
+        response["saved_to"] = str(output_path)
+        response["latest_file"] = str(latest_path)
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error running fuzzy controller from simulation.json: {e}")
+
+# ...existing code...
+
+@app.post("/fuzzylogic", tags=["Fuzzy Control"])
+async def fuzzy_logic_control(
+    displacement: float = Query(..., description="Inter-story drift in meters"),
+    velocity: float = Query(..., description="Inter-story drift velocity in m/s"),
+    acceleration: Optional[float] = Query(None, description="Building acceleration in m/s² (optional)")
+):
+    """
+    PRIMARY FUZZY LOGIC ENDPOINT
+    
+    Receives displacement and velocity, returns control force
+    Automatically saves to JSON file
+    
+    Example: /fuzzylogic?displacement=0.1&velocity=0.5
+    """
+    try:
+        # Compute control force
+        control_force = fuzzy_controller.compute(displacement, velocity, acceleration)
+        
+        # Prepare response
+        response = {
+            "timestamp": datetime.now().isoformat(),
+            "computation_number": fuzzy_controller.computation_count,
+            "inputs": {
+                "displacement_m": displacement,
+                "velocity_ms": velocity,
+                "acceleration_ms2": acceleration
+            },
+            "output": {
+                "control_force_N": control_force,
+                "control_force_kN": control_force / 1000,
+                "direction": "left (negative)" if control_force < 0 else "right (positive)"
+            },
+            "controller_info": {
+                "type": "comprehensive_fuzzy_logic",
+                "displacement_range_m": fuzzy_controller.displacement_range,
+                "velocity_range_ms": fuzzy_controller.velocity_range,
+                "force_range_kN": [fuzzy_controller.force_range[0]/1000, 
+                                   fuzzy_controller.force_range[1]/1000]
+            }
+        }
+        
+        # Save to JSON file
+        output_filename = f"fuzzy_output_{fuzzy_controller.computation_count:06d}.json"
+        output_path = FUZZY_OUTPUT_DIR / output_filename
+        
+        with open(output_path, 'w') as f:
+            json.dump(response, f, indent=2)
+        
+        # Also save as "latest"
+        latest_path = FUZZY_OUTPUT_DIR / "fuzzy_output_latest.json"
+        with open(latest_path, 'w') as f:
+            json.dump(response, f, indent=2)
+        
+        response["saved_to"] = str(output_path)
+        response["latest_file"] = str(latest_path)
+        
+        return response
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fuzzy computation error: {str(e)}")
+
+
+@app.post("/fuzzylogic-batch", tags=["Fuzzy Control"])
+async def fuzzy_logic_batch(request: FuzzyBatchRequest):
+    """
+    Batch process multiple time steps
+    
+    Processes entire time series and returns all control forces
+    """
+    try:
+        if len(request.displacements) != len(request.velocities):
+            raise HTTPException(
+                status_code=400,
+                detail="Displacements and velocities must have same length"
+            )
+        
+        if request.accelerations and len(request.accelerations) != len(request.displacements):
+            raise HTTPException(
+                status_code=400,
+                detail="Accelerations must have same length as displacements"
+            )
+        
+        # Compute batch
+        forces = fuzzy_controller.compute_batch(
+            np.array(request.displacements),
+            np.array(request.velocities),
+            np.array(request.accelerations) if request.accelerations else None
+        )
+        
+        # Prepare response
+        response = {
+            "timestamp": datetime.now().isoformat(),
+            "batch_info": {
+                "total_steps": len(request.displacements),
+                "computation_start": fuzzy_controller.computation_count - len(request.displacements) + 1,
+                "computation_end": fuzzy_controller.computation_count
+            },
+            "time_series": {
+                "displacements_m": request.displacements,
+                "velocities_ms": request.velocities,
+                "accelerations_ms2": request.accelerations if request.accelerations else [None] * len(request.displacements),
+                "control_forces_N": forces.tolist(),
+                "control_forces_kN": (forces / 1000).tolist()
+            },
+            "statistics": {
+                "max_force_kN": float(np.max(np.abs(forces)) / 1000),
+                "mean_force_kN": float(np.mean(np.abs(forces)) / 1000),
+                "std_force_kN": float(np.std(forces) / 1000),
+                "max_displacement_m": float(np.max(np.abs(request.displacements))),
+                "max_velocity_ms": float(np.max(np.abs(request.velocities)))
+            }
+        }
+        
+        # Save batch results
+        batch_filename = f"fuzzy_batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        batch_path = FUZZY_OUTPUT_DIR / batch_filename
+        
+        with open(batch_path, 'w') as f:
+            json.dump(response, f, indent=2)
+        
+        response["saved_to"] = str(batch_path)
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batch computation error: {str(e)}")
+
+
+@app.get("/fuzzy-stats", tags=["Fuzzy Control"])
+async def get_fuzzy_stats():
+    """Get fuzzy controller statistics and configuration"""
+    return fuzzy_controller.get_stats()
+
+
+@app.get("/fuzzy-history", tags=["Fuzzy Control"])
+async def get_fuzzy_history(
+    last_n: int = Query(100, description="Number of recent computations to return")
+):
+    """Get recent fuzzy computation history"""
+    history = fuzzy_controller.computation_history[-last_n:]
+    
+    return {
+        "total_computations": fuzzy_controller.computation_count,
+        "returned_count": len(history),
+        "history": history
+    }
 
 # ============================================================================
 # Neural Network Inference Endpoints

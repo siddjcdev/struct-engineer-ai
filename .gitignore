@@ -219,3 +219,7 @@ neuralnet/src/earthquake_sample_11.png
 neuralnet/src/earthquake_sample_1.png
 neuralnet/src/controller_comparison.png
 neuralnet/src/earthquake_sample_0*.png
+
+.venv_py312/
+restapi/data/
+
