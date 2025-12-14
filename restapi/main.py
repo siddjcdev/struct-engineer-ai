@@ -29,12 +29,16 @@ from models.tmd_models import (
     ControlOutput
 )
 
+class FuzzySingleRequest(BaseModel):
+    """Request model for single prediction"""
+    displacement: float  # meters
+    velocity: float      # m/s
 
 class FuzzyBatchRequest(BaseModel):
     """Request model for batch predictions"""
     displacements: List[float]  # meters, "Array of displacements (m)"
     velocities: List[float]     # m/s, "Array of velocities (m/s)"
-    accelerations: Optional[List[float]]  # m/s², "Array of accelerations (m/s²)"
+    #accelerations: Optional[List[float]]  # m/s², "Array of accelerations (m/s²)"
 
 # ============================================================================
 # Neural Network Model Definition
@@ -440,9 +444,7 @@ async def fuzzy_logic_control_from_simulation():
 
 @app.post("/fuzzylogic", tags=["Fuzzy Control"])
 async def fuzzy_logic_control(
-    displacement: float = Query(..., description="Inter-story drift in meters"),
-    velocity: float = Query(..., description="Inter-story drift velocity in m/s"),
-    acceleration: Optional[float] = Query(None, description="Building acceleration in m/s² (optional)")
+    request: FuzzySingleRequest
 ):
     """
     PRIMARY FUZZY LOGIC ENDPOINT
@@ -454,16 +456,16 @@ async def fuzzy_logic_control(
     """
     try:
         # Compute control force
-        control_force = fuzzy_controller.compute(displacement, velocity, acceleration)
+        control_force = fuzzy_controller.compute(request.displacement, request.velocity, None)
         
         # Prepare response
         response = {
             "timestamp": datetime.now().isoformat(),
             "computation_number": fuzzy_controller.computation_count,
             "inputs": {
-                "displacement_m": displacement,
-                "velocity_ms": velocity,
-                "acceleration_ms2": acceleration
+                "displacement_m": request.displacement,
+                "velocity_ms": request.velocity,
+                "acceleration_ms2": None
             },
             "output": {
                 "control_force_N": control_force,
@@ -503,69 +505,58 @@ async def fuzzy_logic_control(
 @app.post("/fuzzylogic-batch", tags=["Fuzzy Control"])
 async def fuzzy_logic_batch(request: FuzzyBatchRequest):
     """
-    Batch process multiple time steps
-    
-    Processes entire time series and returns all control forces
+    Batch prediction using fuzzy logic controller
+    Matches the format of /nn/predict-batch endpoint
     """
+    if fuzzy_controller is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Fuzzy logic controller not loaded. Please initialize the controller first."
+        )
+    
     try:
+        # Validate input lengths match
         if len(request.displacements) != len(request.velocities):
             raise HTTPException(
                 status_code=400,
-                detail="Displacements and velocities must have same length"
+                detail="Displacement and velocity arrays must have the same length"
             )
         
-        if request.accelerations and len(request.accelerations) != len(request.displacements):
-            raise HTTPException(
-                status_code=400,
-                detail="Accelerations must have same length as displacements"
-            )
+        # Convert to numpy arrays
+        displacements = np.array(request.displacements, dtype=np.float32)
+        velocities = np.array(request.velocities, dtype=np.float32)
         
-        # Compute batch
-        forces = fuzzy_controller.compute_batch(
-            np.array(request.displacements),
-            np.array(request.velocities),
-            np.array(request.accelerations) if request.accelerations else None
+        # Compute predictions (vectorized - very fast!)
+        start_time = time.time()
+        
+        # Option 1: If your fuzzy controller only needs displacement & velocity
+        forces_N = fuzzy_controller.compute_batch(displacements, velocities)
+        
+        # Option 2: If your fuzzy controller requires accelerations parameter (even if None)
+        # Uncomment this and comment out Option 1 above if needed:
+        # forces_N = fuzzy_controller.compute_batch(displacements, velocities, None)
+        
+        inference_time = (time.time() - start_time) * 1000  # Convert to ms
+        
+        # Convert forces from N to kN (to match NN endpoint)
+        forces_kN = forces_N / 1000.0
+        
+        n_predictions = len(forces_kN)
+        time_per_prediction = inference_time / n_predictions if n_predictions > 0 else 0
+        
+        return PredictBatchResponse(
+            forces=forces_kN.tolist(),
+            force_unit="kN",
+            n_predictions=n_predictions,
+            inference_time_ms=inference_time,
+            time_per_prediction_ms=time_per_prediction
         )
-        
-        # Prepare response
-        response = {
-            "timestamp": datetime.now().isoformat(),
-            "batch_info": {
-                "total_steps": len(request.displacements),
-                "computation_start": fuzzy_controller.computation_count - len(request.displacements) + 1,
-                "computation_end": fuzzy_controller.computation_count
-            },
-            "time_series": {
-                "displacements_m": request.displacements,
-                "velocities_ms": request.velocities,
-                "accelerations_ms2": request.accelerations if request.accelerations else [None] * len(request.displacements),
-                "control_forces_N": forces.tolist(),
-                "control_forces_kN": (forces / 1000).tolist()
-            },
-            "statistics": {
-                "max_force_kN": float(np.max(np.abs(forces)) / 1000),
-                "mean_force_kN": float(np.mean(np.abs(forces)) / 1000),
-                "std_force_kN": float(np.std(forces) / 1000),
-                "max_displacement_m": float(np.max(np.abs(request.displacements))),
-                "max_velocity_ms": float(np.max(np.abs(request.velocities)))
-            }
-        }
-        
-        # Save batch results
-        batch_filename = f"fuzzy_batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        batch_path = FUZZY_OUTPUT_DIR / batch_filename
-        
-        with open(batch_path, 'w') as f:
-            json.dump(response, f, indent=2)
-        
-        response["saved_to"] = str(batch_path)
-        
-        return response
         
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Batch computation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+
 
 
 @app.get("/fuzzy-stats", tags=["Fuzzy Control"])

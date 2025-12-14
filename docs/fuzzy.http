@@ -44,7 +44,11 @@ curl -sS -X POST "http://localhost:8080/nn/predict" \
 ###
 curl "http://localhost:8080/nn/status" -H "Accept: application/json"
 ###
-
+# POST /nn/predict-batch
+curl -sS -X POST "http://localhost:8000/nn/predict-batch" \
+  -H "Content-Type: application/json" -H "Accept: application/json" \
+  -d '{"displacements":[0.1,0.05,0.0],"velocities":[0.5,0.2,-0.1],"accelerations":[0.2,0.1,0.0]}'
+###
 curl -sS -X POST "https://tmd-api-887344515766.us-east1.run.app/nn/predict" \
   -H "Content-Type: application/json" -H "Accept: application/json" \
   -d '{"displacement":0.1,"velocity":0.5}'
