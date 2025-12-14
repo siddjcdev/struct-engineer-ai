@@ -222,4 +222,9 @@ neuralnet/src/earthquake_sample_0*.png
 
 .venv_py312/
 restapi/data/
+rl_tmd/rl_logs*/
+rl_tmd/rl_models*/  
+rl_tmd/rl_tensorboard*/
 
+
+restapi/temp_earthquakes/*

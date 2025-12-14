@@ -15,7 +15,7 @@ import time
 import sys
 import os
 
-import fuzzy.FuzzyTMD
+import fuzzy.fixed_fuzzy_controller
 from models.tmd_models import (
     TMDSimulation,
     BaselinePerformance,
@@ -29,16 +29,28 @@ from models.tmd_models import (
     ControlOutput
 )
 
-class FuzzySingleRequest(BaseModel):
-    """Request model for single prediction"""
-    displacement: float  # meters
-    velocity: float      # m/s
+# ================================================================
+# REQUEST/RESPONSE MODELS
+# ================================================================
 
 class FuzzyBatchRequest(BaseModel):
-    """Request model for batch predictions"""
-    displacements: List[float]  # meters, "Array of displacements (m)"
-    velocities: List[float]     # m/s, "Array of velocities (m/s)"
-    #accelerations: Optional[List[float]]  # m/s², "Array of accelerations (m/s²)"
+    """
+    Batch prediction request for fuzzy controller
+    
+    IMPORTANT: These should be RELATIVE values!
+    - displacements: TMD_disp - roof_disp (in meters)
+    - velocities: TMD_vel - roof_vel (in m/s)
+    """
+    displacements: List[float]
+    velocities: List[float]
+
+
+class FuzzyBatchResponse(BaseModel):
+    """Batch prediction response"""
+    forces: List[float]  # Forces in kN
+    force_unit: str = "kN"
+    num_predictions: int
+    inference_time_ms: float
 
 # ============================================================================
 # Neural Network Model Definition
@@ -179,10 +191,10 @@ simulation_data: Optional[TMDSimulation] = None
 nn_controller: Optional[NeuralTMDController] = None
 
 # Initialize comprehensive fuzzy controller
-fuzzy_controller = fuzzy.FuzzyTMD.FuzzyTMDController(
-    displacement_range=(-0.5, 0.5),    # ±50 cm
-    velocity_range=(-2.0, 2.0),         # ±2 m/s
-    force_range=(-100000, 100000)       # ±100 kN
+fuzzy_controller = fuzzy.fixed_fuzzy_controller.FixedFuzzyTMDController(
+    # displacement_range=(-0.5, 0.5),    # ±50 cm
+    # velocity_range=(-2.0, 2.0),         # ±2 m/s
+    # force_range=(-100000, 100000)       # ±100 kN
 )
 
 # Debug: print resolved path
@@ -210,7 +222,7 @@ async def startup_event():
     print("TMD FUZZY CONTROL API - READY FOR DEPLOYMENT")
     print("="*70)
     print(f"✅ Fuzzy Controller: Active")
-    print(f"✅ Force Range: ±{fuzzy_controller.force_range[1]/1000:.1f} kN")
+    #print(f"✅ Force Range: ±{fuzzy_controller.force_range[1]/1000:.1f} kN")
     print(f"✅ Output Directory: {FUZZY_OUTPUT_DIR}")
     print(f"{'✅' if simulation_data else '⚠️ '} Simulation Data: {'Loaded' if simulation_data else 'Not Available'}")
     print("="*70 + "\n")
@@ -351,212 +363,87 @@ async def health_check():
 # FUZZY LOGIC CONTROL ENDPOINTS (PRIMARY)
 # ============================================================================
 
-@app.get("/fuzzylogic", tags=["Fuzzy Control"])
-async def fuzzy_logic_control_from_simulation():
+# ================================================================
+# ENDPOINTS
+# ================================================================
+
+@app.post("/fuzzylogic-batch", response_model=FuzzyBatchResponse)
+async def fuzzy_batch_predict(request: FuzzyBatchRequest):
     """
-    GET variant of /fuzzylogic — reads RMS inputs from data/simulation.json and runs the same controller.
-    Expects fields named (any of):
-      - rms_displacement, rms_velocity, rms_acceleration
-    or nested under keys like 'baseline', 'metrics' or 'rms'.
-    """
-    if not DATA_FILE.exists():
-        raise HTTPException(status_code=404, detail=f"Simulation file not found: {DATA_FILE}")
-
-    try:
-        with open(DATA_FILE, 'r') as f:
-            sim = json.load(f)
-
-        print("Extracting RMS values from simulation data...")
-        print("Available keys:", list(sim.keys()))
-        print("Searching for: rms_displacement, rms_velocity, [rms_acceleration]")
-        def _extract(key):
-            # direct
-            if key in sim:
-                return sim[key]
-            print(f"Key '{key}' not found directly in simulation data.")
-            # common containers
-            container = "tmd_results"
-            print(f"Checking container '{container}' for key '{key}'...")
-            if container in sim and isinstance(sim[container], dict) and key in sim[container]:
-                return sim[container][key]
-            print(f"Key '{key}' not found in containers {('tmd_results',)} or directly in simulation data.")
-            # try short name inside 'rms' container
-            short = key.replace("rms_", "")
-            if "rms" in sim and isinstance(sim["rms"], dict) and short in sim["rms"]:
-                return sim["rms"][short]
-            return None
-
-        displacement = _extract("rms_displacement")
-        velocity = _extract("rms_velocity")
-        acceleration = _extract("rms_acceleration")
-
-        if displacement is None or velocity is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Required RMS fields not found in simulation.json (rms_displacement, rms_velocity[, rms_acceleration])"
-            )
-
-        # run controller (reuse same compute & saving pattern as POST)
-        control_force = fuzzy_controller.compute(float(displacement), float(velocity), float(acceleration) if acceleration is not None else None)
-
-        response = {
-            "timestamp": datetime.now().isoformat(),
-            "source": str(DATA_FILE),
-            "computation_number": fuzzy_controller.computation_count,
-            "inputs": {
-                "displacement_m": displacement,
-                "velocity_ms": velocity,
-                "acceleration_ms2": acceleration
-            },
-            "output": {
-                "control_force_N": control_force,
-                "control_force_kN": control_force / 1000,
-                "direction": "left (negative)" if control_force < 0 else "right (positive)"
-            },
-            "controller_info": {
-                "type": "comprehensive_fuzzy_logic",
-                "displacement_range_m": fuzzy_controller.displacement_range,
-                "velocity_range_ms": fuzzy_controller.velocity_range,
-                "force_range_kN": [fuzzy_controller.force_range[0]/1000, fuzzy_controller.force_range[1]/1000]
-            }
-        }
-
-        # Save result files
-        output_filename = f"fuzzy_simulation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        output_path = FUZZY_OUTPUT_DIR / output_filename
-        with open(output_path, 'w') as f:
-            json.dump(response, f, indent=2)
-        latest_path = FUZZY_OUTPUT_DIR / "fuzzy_output_latest.json"
-        with open(latest_path, 'w') as f:
-            json.dump(response, f, indent=2)
-
-        response["saved_to"] = str(output_path)
-        response["latest_file"] = str(latest_path)
-
-        return response
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error running fuzzy controller from simulation.json: {e}")
-
-# ...existing code...
-
-@app.post("/fuzzylogic", tags=["Fuzzy Control"])
-async def fuzzy_logic_control(
-    request: FuzzySingleRequest
-):
-    """
-    PRIMARY FUZZY LOGIC ENDPOINT
+    Batch fuzzy logic TMD control
     
-    Receives displacement and velocity, returns control force
-    Automatically saves to JSON file
-    
-    Example: /fuzzylogic?displacement=0.1&velocity=0.5
+    Returns forces in kN (kilonewtons)
     """
-    try:
-        # Compute control force
-        control_force = fuzzy_controller.compute(request.displacement, request.velocity, None)
-        
-        # Prepare response
-        response = {
-            "timestamp": datetime.now().isoformat(),
-            "computation_number": fuzzy_controller.computation_count,
-            "inputs": {
-                "displacement_m": request.displacement,
-                "velocity_ms": request.velocity,
-                "acceleration_ms2": None
-            },
-            "output": {
-                "control_force_N": control_force,
-                "control_force_kN": control_force / 1000,
-                "direction": "left (negative)" if control_force < 0 else "right (positive)"
-            },
-            "controller_info": {
-                "type": "comprehensive_fuzzy_logic",
-                "displacement_range_m": fuzzy_controller.displacement_range,
-                "velocity_range_ms": fuzzy_controller.velocity_range,
-                "force_range_kN": [fuzzy_controller.force_range[0]/1000, 
-                                   fuzzy_controller.force_range[1]/1000]
-            }
-        }
-        
-        # Save to JSON file
-        output_filename = f"fuzzy_output_{fuzzy_controller.computation_count:06d}.json"
-        output_path = FUZZY_OUTPUT_DIR / output_filename
-        
-        with open(output_path, 'w') as f:
-            json.dump(response, f, indent=2)
-        
-        # Also save as "latest"
-        latest_path = FUZZY_OUTPUT_DIR / "fuzzy_output_latest.json"
-        with open(latest_path, 'w') as f:
-            json.dump(response, f, indent=2)
-        
-        response["saved_to"] = str(output_path)
-        response["latest_file"] = str(latest_path)
-        
-        return response
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Fuzzy computation error: {str(e)}")
-
-
-@app.post("/fuzzylogic-batch", tags=["Fuzzy Control"])
-async def fuzzy_logic_batch(request: FuzzyBatchRequest):
-    """
-    Batch prediction using fuzzy logic controller
-    Matches the format of /nn/predict-batch endpoint
-    """
-    if fuzzy_controller is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Fuzzy logic controller not loaded. Please initialize the controller first."
-        )
+    import time
+    start_time = time.time()
     
     try:
-        # Validate input lengths match
+        # Validate input
         if len(request.displacements) != len(request.velocities):
             raise HTTPException(
-                status_code=400,
-                detail="Displacement and velocity arrays must have the same length"
+                status_code=422,
+                detail="Displacements and velocities must have same length"
             )
         
-        # Convert to numpy arrays
-        displacements = np.array(request.displacements, dtype=np.float32)
-        velocities = np.array(request.velocities, dtype=np.float32)
+        if len(request.displacements) == 0:
+            raise HTTPException(
+                status_code=422,
+                detail="Empty input arrays"
+            )
         
-        # Compute predictions (vectorized - very fast!)
-        start_time = time.time()
-        
-        # Option 1: If your fuzzy controller only needs displacement & velocity
-        forces_N = fuzzy_controller.compute_batch(displacements, velocities)
-        
-        # Option 2: If your fuzzy controller requires accelerations parameter (even if None)
-        # Uncomment this and comment out Option 1 above if needed:
-        # forces_N = fuzzy_controller.compute_batch(displacements, velocities, None)
-        
-        inference_time = (time.time() - start_time) * 1000  # Convert to ms
-        
-        # Convert forces from N to kN (to match NN endpoint)
-        forces_kN = forces_N / 1000.0
-        
-        n_predictions = len(forces_kN)
-        time_per_prediction = inference_time / n_predictions if n_predictions > 0 else 0
-        
-        return PredictBatchResponse(
-            forces=forces_kN.tolist(),
-            force_unit="kN",
-            n_predictions=n_predictions,
-            inference_time_ms=inference_time,
-            time_per_prediction_ms=time_per_prediction
+        # Compute forces (returns Newtons)
+        forces_N = fuzzy_controller.compute_batch(
+            request.displacements,
+            request.velocities
         )
         
-    except HTTPException:
-        raise
+        # Convert to kN
+        forces_kN = forces_N / 1000.0
+        
+        # Calculate inference time
+        inference_time = (time.time() - start_time) * 1000  # ms
+        
+        return FuzzyBatchResponse(
+            forces=forces_kN.tolist(),
+            force_unit="kN",
+            num_predictions=len(forces_kN),
+            inference_time_ms=inference_time
+        )
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Fuzzy controller error: {str(e)}"
+        )
 
+
+@app.get("/fuzzylogic/test")
+async def test_fuzzy_controller():
+    """
+    Test endpoint to verify fuzzy controller is working
+    """
+    
+    # Test case: TMD at 0.15m right, moving 0.8 m/s right
+    # Should return negative force (push left)
+    test_disp = 0.15
+    test_vel = 0.8
+    
+    force_N = fuzzy_controller.compute(test_disp, test_vel)
+    force_kN = force_N / 1000.0
+    
+    return {
+        "status": "ok",
+        "test_input": {
+            "relative_displacement": test_disp,
+            "relative_velocity": test_vel
+        },
+        "output": {
+            "force_N": force_N,
+            "force_kN": force_kN
+        },
+        "expected": "Negative force (push left)",
+        "correct": force_kN < 0
+    }
 
 
 @app.get("/fuzzy-stats", tags=["Fuzzy Control"])
