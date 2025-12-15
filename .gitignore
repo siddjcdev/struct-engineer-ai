@@ -228,3 +228,7 @@ rl_tmd/rl_tensorboard*/
 
 
 restapi/temp_earthquakes/*
+rl_tmd/v2/perfect_rl_models_*/
+rl_tmd/v2/comparison_outputs_*/
+rl_tmd/v2/perfect_rl_tensorboard_*/
+rl_tmd/v2/perfect_rl_logs_*/
