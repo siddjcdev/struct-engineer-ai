@@ -29,7 +29,7 @@ class ImprovedTMDBuildingEnv(gym.Env):
         self,
         earthquake_data: np.ndarray,
         dt: float = 0.02,
-        max_force: float = 150000.0,  # Start with 150 kN (will use curriculum)
+        max_force: float = 150000.0,  # Start with 50 kN (will use curriculum)
         earthquake_name: str = "Unknown"
     ):
         super().__init__()

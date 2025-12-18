@@ -207,7 +207,7 @@ marimo/_lsp/
 __marimo__/
 *.mat
 matlab/results/*.json
-matlab/datasets/*.csv
+#matlab/datasets/*.csv
 neuralnet/src/tmd_trained_model_peer.pth
 neuralnet/src/tmd_trained_model_peer_0.pth
 neuralnet/src/peer_earthquake_data/peer_earthquake_dataset.json
@@ -232,3 +232,5 @@ rl_tmd/v2/perfect_rl_models_*/
 rl_tmd/v2/comparison_outputs_*/
 rl_tmd/v2/perfect_rl_tensorboard_*/
 rl_tmd/v2/perfect_rl_logs_*/
+rl_tmd/v2/simple_rl_models/
+rl_tmd/v2/comparison_outputs/

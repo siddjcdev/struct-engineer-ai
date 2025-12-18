@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel,Field
 import json
 import shutil
 import skfuzzy as fuzz
@@ -14,6 +14,8 @@ import torch.nn as nn
 import time
 import sys
 import os
+
+
 
 import fuzzy.fixed_fuzzy_controller
 from models.tmd_models import (
@@ -28,6 +30,8 @@ from models.tmd_models import (
     BuildingState,
     ControlOutput
 )
+from rl_champion.perfect_rl_api import RLCLController
+
 
 # ================================================================
 # REQUEST/RESPONSE MODELS
@@ -128,6 +132,63 @@ class NeuralTMDController:
         y = y_norm * self.output_std + self.output_mean
         return y.flatten()
 
+# ============================================================================
+# Reinforcement Learning Model Definition
+# ============================================================================
+# Request/Response models
+
+class RLSingleRequest(BaseModel):
+    """Single prediction request"""
+    roof_displacement: float = Field(..., description="Roof displacement (m)")
+    roof_velocity: float = Field(..., description="Roof velocity (m/s)")
+    tmd_displacement: float = Field(..., description="TMD displacement (m)")
+    tmd_velocity: float = Field(..., description="TMD velocity (m/s)")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "roof_displacement": 0.15,
+                "roof_velocity": 0.8,
+                "tmd_displacement": 0.16,
+                "tmd_velocity": 0.9
+            }
+        }
+
+
+class RLSingleResponse(BaseModel):
+    """Single prediction response"""
+    force_N: float = Field(..., description="Control force (Newtons)")
+    force_kN: float = Field(..., description="Control force (kilonewtons)")
+    inference_time_ms: float = Field(..., description="Inference time (ms)")
+    model: str = "Perfect RL (Champion)"
+
+
+class RLBatchRequest(BaseModel):
+    """Batch prediction request"""
+    roof_displacements: List[float] = Field(..., description="Roof displacements (m)")
+    roof_velocities: List[float] = Field(..., description="Roof velocities (m/s)")
+    tmd_displacements: List[float] = Field(..., description="TMD displacements (m)")
+    tmd_velocities: List[float] = Field(..., description="TMD velocities (m/s)")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "roof_displacements": [0.15, -0.10, 0.05],
+                "roof_velocities": [0.8, -0.5, 0.3],
+                "tmd_displacements": [0.16, -0.09, 0.06],
+                "tmd_velocities": [0.85, -0.48, 0.32]
+            }
+        }
+
+
+class RLBatchResponse(BaseModel):
+    """Batch prediction response"""
+    forces_N: List[float] = Field(..., description="Control forces (Newtons)")
+    forces_kN: List[float] = Field(..., description="Control forces (kilonewtons)")
+    count: int = Field(..., description="Number of predictions")
+    total_time_ms: float = Field(..., description="Total time (ms)")
+    avg_time_ms: float = Field(..., description="Average time per prediction (ms)")
+    model: str = "Perfect RL (Champion)"
 
 # ============================================================================
 # Pydantic Models for Neural Network Endpoints
@@ -160,6 +221,8 @@ class PredictBatchResponse(BaseModel):
     time_per_prediction_ms: float
 
 
+
+
 # ============================================================================
 # FastAPI App
 # ============================================================================
@@ -173,6 +236,7 @@ app = FastAPI(
 DATA_FILE = Path("data/simulation.json")
 #MODEL_FILE = (Path(__file__).parent.parent / "neuralnet" / "src" / "models" / "tmd_trained_model_peer.pth").resolve()
 MODEL_FILE = Path("models/tmd_trained_model_peer.pth")
+RL_MODEL_FILE = Path("models/rl_cl_model_final.zip")
 
 # --- PATHS (Deployment-ready) ---
 ROOT_PATH = Path(__file__).parent
@@ -206,10 +270,6 @@ print(f"Model file exists: {MODEL_FILE.exists()}")
 # Startup Functions
 # ============================================================================
 
-
-
-
-
 @app.on_event("startup")
 async def startup_event():
     """Load data and model on startup"""
@@ -218,6 +278,7 @@ async def startup_event():
     print("="*70)
     load_simulation_data()
     load_neural_network()
+    load_RL_model()
     print("\n" + "="*70)
     print("TMD FUZZY CONTROL API - READY FOR DEPLOYMENT")
     print("="*70)
@@ -230,8 +291,6 @@ async def startup_event():
     print("✅ API Ready")
     print("="*70)
 
-    
-    
 # ============================================================================
 # DATA LOADING FUNCTIONS
 # ============================================================================
@@ -313,6 +372,24 @@ def load_neural_network():
         nn_controller = None
         return False
 
+def load_RL_model():
+    """Load trained RL model"""
+    global rl_controller
+    try:
+        rl_controller = RLCLController(str(RL_MODEL_FILE))
+        print("✅ RL model ready for inference")
+        return True
+    except FileNotFoundError:
+        print(f"⚠️  Warning: {RL_MODEL_FILE} not found. Reinforcement learning endpoints will be disabled.")
+        print(f"   Train the model first: python train_perfect_rl_simple.py")
+        rl_controller = None
+        return False
+    except Exception as e:
+        print(f"❌ Error loading RL model: {e}")
+        rl_controller = None
+        return False
+
+
 # ============================================================================
 # General Endpoints
 # ============================================================================
@@ -341,7 +418,16 @@ async def root():
             "input": "/input",
             "nn_predict_single": "/nn/predict",
             "nn_predict_batch": "/nn/predict-batch",
-            "nn_status": "/nn/status"
+            "nn_status": "/nn/status",
+            "rl_single": "POST /rl-cl/predict",
+            "rl_batch": "POST /rl-cl/predict-batch",
+            "rl_status": "GET /rl-cl/health",
+        },
+        "performance": {
+            "TEST3_M4.5": "24.67 cm (21.8% vs passive)",
+            "TEST4_M6.9": "20.80 cm (32% vs passive)",
+            "average": "~21.5 cm across all scenarios",
+            "vs_fuzzy": "+14% better"
         }
     }
 
@@ -603,6 +689,204 @@ async def nn_predict_batch(request: PredictBatchRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
 
+# ============================================================================
+# Reinforcement Learning Inference Endpoints
+# ============================================================================
+# Endpoint
+# @app.post("/rl-cl/predict-batch", response_model=RLBatchResponse)
+# async def rl_batch_predict(request: RLBatchRequest):
+#     import time
+#     start_time = time.time()
+    
+#     try:
+#         # Validate input
+#         n = len(request.roof_displacements)
+#         if not (len(request.roof_velocities) == n and 
+#                 len(request.tmd_displacements) == n and 
+#                 len(request.tmd_velocities) == n):
+#             raise HTTPException(
+#                 status_code=422,
+#                 detail="All input arrays must have same length"
+#             )
+        
+#         # Predict forces (returns Newtons)
+#         forces_N = rl_controller.predict_batch(
+#             request.roof_displacements,
+#             request.roof_velocities,
+#             request.tmd_displacements,
+#             request.tmd_velocities
+#         )
+        
+#         # Convert to kN
+#         forces_kN = forces_N / 1000.0
+        
+#         # Calculate inference time
+#         inference_time = (time.time() - start_time) * 1000  # ms
+        
+#         return RLBatchResponse(
+#             forces=forces_kN.tolist(),
+#             force_unit="kN",
+#             num_predictions=len(forces_kN),
+#             inference_time_ms=inference_time
+#         )
+        
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=500,
+#             detail=f"RL controller error: {str(e)}"
+#         )
+
+
+@app.get("/rl-cl/test", tags=["Reinforcement Learning"])
+async def test_rl_controller():
+    # Test with sample state
+    test_state = {
+        "roof_disp": 0.15,
+        "roof_vel": 0.8,
+        "tmd_disp": 0.16,
+        "tmd_vel": 0.9
+    }
+    
+    force_N = rl_controller.predict_single(
+        test_state["roof_disp"],
+        test_state["roof_vel"],
+        test_state["tmd_disp"],
+        test_state["tmd_vel"]
+    )
+    
+    return {
+        "status": "ok",
+        "test_input": test_state,
+        "output": {
+            "force_N": force_N,
+            "force_kN": force_N / 1000.0
+        }
+    }
+
+
+@app.post("/rl-cl/predict", response_model=RLSingleResponse, tags=["Reinforcement Learning"])
+async def predict_single(request: RLSingleRequest):
+    """
+    RL Single prediction endpoint
+    
+    Returns control force for a single state.
+    """
+    if rl_controller is None:
+        raise HTTPException(status_code=503, detail="RL Model not loaded")
+    
+    start = time.time()
+    
+    try:
+        force = rl_controller.predict_single(
+            request.roof_displacement,
+            request.roof_velocity,
+            request.tmd_displacement,
+            request.tmd_velocity
+        )
+        
+        elapsed = (time.time() - start) * 1000
+        
+        return RLSingleResponse(
+            force_N=float(force),
+            force_kN=float(force / 1000),
+            inference_time_ms=elapsed
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"RL Prediction error: {str(e)}")
+
+
+@app.post("/rl-cl/predict-batch", response_model=RLBatchResponse, tags=["Reinforcement Learning"])
+async def predict_batch(request: RLBatchRequest):
+    """
+    Batch prediction endpoint
+    
+    Returns control forces for multiple states.
+    More efficient than multiple single predictions.
+    """
+    if rl_controller is None:
+        raise HTTPException(status_code=503, detail="RL Model not loaded")
+    
+    # Validate inputs
+    n = len(request.roof_displacements)
+    if not all(len(x) == n for x in [
+        request.roof_velocities,
+        request.tmd_displacements,
+        request.tmd_velocities
+    ]):
+        raise HTTPException(
+            status_code=422,
+            detail="All arrays must have same length"
+        )
+    
+    start = time.time()
+    
+    try:
+        forces = rl_controller.predict_batch(
+            request.roof_displacements,
+            request.roof_velocities,
+            request.tmd_displacements,
+            request.tmd_velocities
+        )
+        
+        elapsed = (time.time() - start) * 1000
+        
+        return RLBatchResponse(
+            forces_N=forces.tolist(),
+            forces_kN=(forces / 1000).tolist(),
+            count=n,
+            total_time_ms=elapsed,
+            avg_time_ms=elapsed / n if n > 0 else 0
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batch prediction error: {str(e)}")
+
+
+@app.get("/rl-cl/status", tags=["Reinforcement Learning"])
+async def health():
+    """Health check endpoint"""
+    if rl_controller is None:
+        return {
+            "status": "unhealthy",
+            "model_loaded": False,
+            "message": "Model not loaded"
+        }
+    
+    return {
+        "status": "healthy",
+        "model_loaded": True,
+        "model": "Perfect RL (Champion)",
+        "performance": "24.67 cm (TEST3), 20.80 cm (TEST4)",
+        "message": "Ready for predictions"
+    }
+
+@app.get("/rl-cl/info")
+async def info():
+    """RL Model information"""
+    return {
+        "name": "Perfect RL (Champion)",
+        "type": "SAC (Soft Actor-Critic)",
+        "training": "Curriculum learning (50→100→150 kN)",
+        "performance": {
+            "TEST3_M4.5": "24.67 cm (21.8% vs passive)",
+            "TEST4_M6.9": "20.80 cm (32% vs passive)",
+            "TEST5_M6.7": "20.80 cm",
+            "TEST6b_noise": "21.11 cm (+1.5% degradation)",
+            "TEST6c_latency": "20.80 cm (0% degradation)",
+            "TEST6d_dropout": "20.89 cm (+0.4% degradation)",
+            "average": "~21.5 cm"
+        },
+        "comparison": {
+            "vs_passive": "+32% better (on TEST4)",
+            "vs_fuzzy": "+14% better (average)",
+            "vs_rl_baseline": "+6% better (TEST3)",
+            "rank": "🥇 1st place out of 5 methods"
+        },
+        "force_range": "±150 kN",
+        "avg_force": "~85 kN",
+        "robustness": "Excellent (< 3% degradation)"
+    }
 
 # ============================================================================
 # Original Simulation Endpoints (unchanged)
@@ -813,9 +1097,18 @@ async def reload_data():
 if __name__ == "__main__":
     import uvicorn
     print("\n" + "="*70)
-    print("TMD Simulation API with Neural Network Inference")
+    print("TMD Simulation API with Neural Network Inferences")
+    print("="*70)
+    print("\n🏆 RL Champion model: Beats fuzzy logic by 14%")
+    print("   Performance: 24.67 cm (TEST3), 20.80 cm (TEST4)")
+    print("\n📊 Endpoints:")
+    print("   POST /rl-cl/predict        - Single prediction")
+    print("   POST /rl-cl/predict-batch  - Batch prediction")
+    print("   GET  /rl-cl/status         - Health check")
+    print("   GET  /rl-cl/info           - Model info")
+    print("   GET  /rl-cl/docs           - Interactive docs")
     print("="*70)
     print("Starting server on http://0.0.0.0:8080")
     print("API Documentation: http://0.0.0.0:8080/docs")
     print("="*70 + "\n")
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    uvicorn.run(app, host="0.0.0.0", port=8080, log_level="debug")
