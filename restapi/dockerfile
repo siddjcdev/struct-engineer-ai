@@ -14,6 +14,8 @@ COPY main.py .
 COPY models/ ./models/
 COPY data/ ./data/
 COPY fuzzy/ ./fuzzy/
+COPY rl_cl/ ./rl_cl/
+COPY rl_baseline/ ./rl_baseline/
 
 # Expose port
 EXPOSE 8080

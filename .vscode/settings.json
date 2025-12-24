@@ -1,0 +1,5 @@
+{
+    "python.analysis.extraPaths": [
+        "./restapi/rl_baseline"
+    ]
+}

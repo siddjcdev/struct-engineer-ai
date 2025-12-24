@@ -12,7 +12,9 @@ Author: Siddharth
 Date: December 2025
 """
 
+from typing import List, Optional
 import numpy as np
+from pydantic import BaseModel, Field
 import skfuzzy as fuzz
 from skfuzzy import control as ctrl
 
@@ -164,22 +166,32 @@ class FixedFuzzyTMDController:
         self.control_system = ctrl.ControlSystem(rules)
         self.controller = ctrl.ControlSystemSimulation(self.control_system)
         
-        print(f"✅ Fuzzy controller initialized with {len(rules)} rules")
-        print(f"   Input ranges: displacement [-0.5, 0.5] m, velocity [-2, 2] m/s")
-        print(f"   Output range: force [-100, 100] kN")
+        print(f"✅ FUZZY: Fuzzy controller initialized with {len(rules)} rules")
+        print(f"   FUZZY: Input ranges: displacement [-0.5, 0.5] m, velocity [-2, 2] m/s")
+        print(f"   FUZZY: Output range: force [-100, 100] kN")
     
     
-    def compute(self, relative_displacement, relative_velocity):
+    def compute(self, roof_disp, roof_vel, tmd_disp, tmd_vel):
         """
-        Compute control force for given relative state
+        Compute control force for given absolute states
         
         Args:
-            relative_displacement: TMD displacement - roof displacement (meters)
-            relative_velocity: TMD velocity - roof velocity (m/s)
+            roof_disp: Roof displacement (meters)
+            roof_vel: Roof velocity (m/s)
+            tmd_disp: TMD displacement (meters)
+            tmd_vel: TMD velocity (m/s)
             
         Returns:
             control_force: Force in Newtons (will be applied with Newton's 3rd law)
         """
+        #print(f"FUZZY: Computing force for disp={relative_displacement}, vel={relative_velocity}...")
+        # Calculate relative states (TMD relative to roof)
+        relative_displacement = tmd_disp - roof_disp
+        relative_velocity = tmd_vel - roof_vel
+        
+        #print(f"FUZZY: roof_disp={roof_disp:.6f}, roof_vel={roof_vel:.6f}")
+        #print(f"FUZZY: tmd_disp={tmd_disp:.6f}, tmd_vel={tmd_vel:.6f}")
+        #print(f"FUZZY: relative_disp={relative_displacement:.6f}, relative_vel={relative_velocity:.6f}")
         
         # Clamp inputs to valid range
         disp = np.clip(relative_displacement, -0.5, 0.5)
@@ -187,6 +199,7 @@ class FixedFuzzyTMDController:
         
         # Handle edge case: if both near zero, return zero force
         if abs(disp) < 1e-6 and abs(vel) < 1e-6:
+            print(f"FUZZY: Near-zero state, returning 0 N")
             return 0.0
         
         try:
@@ -194,46 +207,155 @@ class FixedFuzzyTMDController:
             self.controller.input['displacement'] = disp
             self.controller.input['velocity'] = vel
             
+            #print(f"FUZZY: Inputs set - disp: {disp:.6f}, vel: {vel:.6f}")
+            
             # Compute
             self.controller.compute()
             
+            #print(f"FUZZY: Computation complete - output force: {self.controller.output['force']:.2f} N")
+            
             # Get output force in Newtons
             force_N = float(self.controller.output['force'])
+            #print(f"FUZZY: Raw output force: {force_N:.2f} N")
             
             # Clamp to physical limits (±100 kN)
             force_N = np.clip(force_N, -100000, 100000)
+            #print(f"FUZZY: Clamped output force: {force_N:.2f} N")
             
             return force_N
-            
+        
         except Exception as e:
-            print(f"Warning: Fuzzy computation failed for disp={disp}, vel={vel}: {e}")
+            print(f"Warning: Fuzzy computation failed for disp={disp:.6f}, vel={vel:.6f}: {e}")
             # Fallback to simple PD control if fuzzy fails
             Kp = 50000  # N/m
             Kd = 20000  # N·s/m
-            return -Kp * disp - Kd * vel
+            fallback_force = -Kp * disp - Kd * vel
+            print(f"FUZZY: Using fallback PD control: {fallback_force:.2f} N")
+            return fallback_force
     
+    # def compute_old(self, relative_displacement, relative_velocity):
+    #     """
+    #     Compute control force for given relative state
+        
+    #     Args:
+    #         relative_displacement: TMD displacement - roof displacement (meters)
+    #         relative_velocity: TMD velocity - roof velocity (m/s)
+            
+    #     Returns:
+    #         control_force: Force in Newtons (will be applied with Newton's 3rd law)
+    #     """
+    #     print(f"FUZZY: Computing force for disp={relative_displacement}, vel={relative_velocity}...")
+    #     # Clamp inputs to valid range
+    #     disp = np.clip(relative_displacement, -0.5, 0.5)
+    #     vel = np.clip(relative_velocity, -2.0, 2.0)
+        
+    #     # Handle edge case: if both near zero, return zero force
+    #     if abs(disp) < 1e-6 and abs(vel) < 1e-6:
+    #         return 0.0
+        
+    #     try:
+    #         # Set inputs
+    #         self.controller.input['displacement'] = disp
+    #         self.controller.input['velocity'] = vel
+            
+    #         print(f"FUZZY: Inputs set - disp: {disp}, vel: {vel}")
+    #         # Compute
+    #         self.controller.compute()
+            
+    #         print(f"FUZZY: Computation complete - output force: {self.controller.output['force']} N")
+    #         # Get output force in Newtons
+    #         force_N = float(self.controller.output['force'])
+    #         print(f"FUZZY: Raw output force: {force_N} N")
+    #         # Clamp to physical limits (±100 kN)
+    #         force_N = np.clip(force_N, -100000, 100000)
+    #         print(f"FUZZY: Clamped output force: {force_N} N")
+    #         return force_N
+            
+    #     except Exception as e:
+    #         print(f"Warning: Fuzzy computation failed for disp={disp}, vel={vel}: {e}")
+    #         # Fallback to simple PD control if fuzzy fails
+    #         Kp = 50000  # N/m
+    #         Kd = 20000  # N·s/m
+    #         return -Kp * disp - Kd * vel
     
-    def compute_batch(self, relative_displacements, relative_velocities):
+    def compute_batch(self, roof_displacements, roof_velocities, tmd_displacements, tmd_velocities):
         """
         Compute control forces for batch of states
         
         Args:
-            relative_displacements: Array of (TMD - roof) displacements
-            relative_velocities: Array of (TMD - roof) velocities
+            roof_displacements: Array of roof displacements (meters)
+            roof_velocities: Array of roof velocities (m/s)
+            tmd_displacements: Array of TMD displacements (meters)
+            tmd_velocities: Array of TMD velocities (m/s)
             
         Returns:
-            forces: Array of control forces in Newtons
+            forces: Array of forces in Newtons
         """
+        n = len(roof_displacements)
+        forces = np.zeros(n)
         
-        displacements = np.array(relative_displacements)
-        velocities = np.array(relative_velocities)
-        
-        forces = np.zeros(len(displacements))
-        
-        for i in range(len(displacements)):
-            forces[i] = self.compute(displacements[i], velocities[i])
+        for i in range(n):
+            forces[i] = self.compute(
+                roof_displacements[i],
+                roof_velocities[i],
+                tmd_displacements[i],
+                tmd_velocities[i]
+            )
         
         return forces
+
+    # def compute_batch_OLD(self, relative_displacements, relative_velocities):
+    #     """
+    #     Compute control forces for batch of states
+        
+    #     Args:
+    #         relative_displacements: Array of (TMD - roof) displacements
+    #         relative_velocities: Array of (TMD - roof) velocities
+            
+    #     Returns:
+    #         forces: Array of control forces in Newtons
+    #     """
+        
+    #     displacements = np.array(relative_displacements)
+    #     velocities = np.array(relative_velocities)
+        
+    #     forces = np.zeros(len(displacements))
+        
+    #     for i in range(len(displacements)):
+    #         forces[i] = self.compute(displacements[i], velocities[i])
+        
+    #     return forces
+
+    def get_stats(self):
+        """Get controller statistics"""
+        return {
+            #"displacement_range_m": self.displacement.universe,
+            #"velocity_range_ms": self.velocity.universe,
+            #"force_range_kN": self.force.universe,
+            "status": "active"
+        }
+# ================================================================
+# REQUEST/RESPONSE MODELS
+# ================================================================
+
+class FuzzyBatchRequest(BaseModel):
+    """
+    Batch prediction request for fuzzy controller
+    """
+    roof_displacements: List[float] = Field(..., description="Roof displacements (m)")
+    roof_velocities: List[float] = Field(..., description="Roof velocities (m/s)")
+    tmd_displacements: List[float] = Field(..., description="TMD displacements (m)")
+    tmd_velocities: List[float] = Field(..., description="TMD velocities (m/s)")
+    
+
+
+class FuzzyBatchResponse(BaseModel):
+    """Batch prediction response"""
+    forces: List[float]  # Forces in kN
+    force_unit: str = "kN"
+    num_predictions: int
+    inference_time_ms: float
+
 
 
 # ================================================================

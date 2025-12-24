@@ -1,0 +1,128 @@
+════════════════════════════════════════════════════════
+  3-WAY TMD CONTROLLER COMPARISON TEST
+════════════════════════════════════════════════════════
+
+🔍 Checking prerequisites...
+
+  [1/2] Checking API connection... ✅
+        Status: healthy
+  [2/2] Checking earthquake files... Small Earthquake (M4.5): datasets/TEST3_small_earthquake_M4.5.csv
+Large Earthquake (M6.9): datasets/TEST4_large_earthquake_M6.9.csv
+Moderate Earthquake (M6.7): datasets/TEST5_earthquake_M6.7.csv
+Baseline Clean: datasets/TEST6a_baseline_clean.csv
+10% Noise: datasets/TEST6b_with_10pct_noise.csv
+50ms Latency: datasets/TEST6c_with_50ms_latency.csv
+5% Dropout: datasets/TEST6d_with_5pct_dropout.csv
+Combined Stress: datasets/TEST6e_combined_stress.csv
+✅
+
+✓ All prerequisites satisfied!
+
+🏗️  Building structural system...
+  Building: 12 floors
+  Soft story: Floor 8 (60% stiffness)
+  First mode period: 5.066 s
+✓ System built
+
+🚀 Starting comprehensive comparison...
+
+════════════════════════════════════════════════════════
+  SCENARIO 1/8: TEST3 - Small Earthquake (M4.5)
+════════════════════════════════════════════════════════
+
+  Earthquake: 6001 steps, 120.0 seconds
+  PGA: 1.000 m/s² (0.10g)
+
+  [1/4] Testing Passive TMD... Peak: 0.0491 m (0.05 s)
+  [2/4] Testing Fuzzy Logic... Peak: 0.9033 m, Force: 9.3 kN (53.47 s)
+  [3/4] Testing RL... Peak: 0.4658 m, Force: 8.5 kN (7.38 s)
+
+  [4/4] Testing RL_CL... Peak: 1.9588 m, Force: 42.6 kN (7.89 s)
+
+════════════════════════════════════════════════════════
+  SCENARIO 2/8: TEST4 - Large Earthquake (M6.9)
+════════════════════════════════════════════════════════
+  Earthquake: 6001 steps, 120.0 seconds
+  PGA: 3.921 m/s² (0.40g)
+
+  [1/4] Testing Passive TMD... Peak: 0.4228 m (0.02 s)
+  [2/4] Testing Fuzzy Logic... Peak: 2.4352 m, Force: 21.3 kN (53.88 s)
+  [3/4] Testing RL... Peak: 1.9083 m, Force: 19.8 kN (8.45 s)
+
+  [4/4] Testing RL_CL... Peak: 3.9173 m, Force: 67.7 kN (7.83 s)
+
+════════════════════════════════════════════════════════
+  SCENARIO 3/8: TEST5 - Moderate Earthquake (M6.7)
+════════════════════════════════════════════════════════
+
+  Earthquake: 6001 steps, 120.0 seconds
+  PGA: 3.921 m/s² (0.40g)
+
+  [1/4] Testing Passive TMD... Peak: 0.4228 m (0.01 s)
+  [2/4] Testing Fuzzy Logic... Peak: 2.4352 m, Force: 21.3 kN (55.27 s)
+  [3/4] Testing RL... Peak: 1.9083 m, Force: 19.8 kN (7.22 s)
+
+  [4/4] Testing RL_CL... Peak: 3.9173 m, Force: 67.7 kN (7.10 s)
+
+════════════════════════════════════════════════════════
+  SCENARIO 4/8: TEST6a - Baseline Clean
+════════════════════════════════════════════════════════
+
+  Earthquake: 6001 steps, 120.0 seconds
+  PGA: 3.921 m/s² (0.40g)
+
+  [1/4] Testing Passive TMD... Peak: 0.4228 m (0.01 s)
+  [2/4] Testing Fuzzy Logic... Peak: 2.4352 m, Force: 21.3 kN (53.03 s)
+  [3/4] Testing RL... Peak: 1.9083 m, Force: 19.8 kN (8.11 s)
+
+  [4/4] Testing RL_CL... Peak: 3.9173 m, Force: 67.7 kN (7.39 s)
+
+════════════════════════════════════════════════════════
+  SCENARIO 5/8: TEST6b - 10% Noise
+════════════════════════════════════════════════════════
+  Earthquake: 6001 steps, 120.0 seconds
+  PGA: 3.904 m/s² (0.40g)
+
+  [1/4] Testing Passive TMD... Peak: 0.4272 m (0.02 s)
+  [2/4] Testing Fuzzy Logic... Peak: 2.3138 m, Force: 23.9 kN (55.65 s)
+  [3/4] Testing RL... Peak: 1.9197 m, Force: 22.3 kN (8.42 s)
+
+  [4/4] Testing RL_CL... Peak: 5.0619 m, Force: 88.6 kN (7.42 s)
+
+════════════════════════════════════════════════════════
+  SCENARIO 6/8: TEST6c - 50ms Latency
+════════════════════════════════════════════════════════
+  Earthquake: 6001 steps, 120.0 seconds
+  PGA: 3.921 m/s² (0.40g)
+
+  [1/4] Testing Passive TMD... Peak: 0.4228 m (0.01 s)
+  [2/4] Testing Fuzzy Logic... Peak: 2.4363 m, Force: 21.3 kN (54.82 s)
+  [3/4] Testing RL... Peak: 1.9132 m, Force: 19.8 kN (8.00 s)
+
+  [4/4] Testing RL_CL... Peak: 3.9200 m, Force: 67.6 kN (7.24 s)
+
+════════════════════════════════════════════════════════
+  SCENARIO 7/8: TEST6d - 5% Dropout
+════════════════════════════════════════════════════════
+
+  Earthquake: 6001 steps, 120.0 seconds
+  PGA: 3.921 m/s² (0.40g)
+
+  [1/4] Testing Passive TMD... Peak: 0.3535 m (0.01 s)
+  [2/4] Testing Fuzzy Logic... Peak: 2.5894 m, Force: 22.1 kN (54.68 s)
+  [3/4] Testing RL... Peak: 2.1100 m, Force: 20.9 kN (8.15 s)
+
+  [4/4] Testing RL_CL... Peak: 4.5084 m, Force: 68.9 kN (7.83 s)
+
+════════════════════════════════════════════════════════
+  SCENARIO 8/8: TEST6e - Combined Stress
+════════════════════════════════════════════════════════
+
+  Earthquake: 6001 steps, 120.0 seconds
+  PGA: 3.880 m/s² (0.40g)
+
+  [1/4] Testing Passive TMD... Peak: 0.4080 m (0.01 s)
+  [2/4] Testing Fuzzy Logic... Peak: 3.0821 m, Force: 31.9 kN (54.42 s)
+  [3/4] Testing RL... Peak: 2.5507 m, Force: 29.3 kN (8.42 s)
+
+  [4/4] Testing RL_CL... Peak: 6.7972 m, Force: 99.7 kN (7.47 s)

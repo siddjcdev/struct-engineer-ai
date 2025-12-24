@@ -234,3 +234,11 @@ rl_tmd/v2/perfect_rl_tensorboard_*/
 rl_tmd/v2/perfect_rl_logs_*/
 rl_tmd/v2/simple_rl_models/
 rl_tmd/v2/comparison_outputs/
+rl/rl_baseline/rl_models/tmd_sac_checkpoint_*_steps.zip
+rl/rl_cl/perfect_rl_models_0/best_model_*steps.zip
+rl/rl_cl/simple_rl_models/stage*kN.zip
+rl/rl_cl/comparison_outputs_*/
+rl/rl_cl/perfect_rl_models_*/
+rl/rl_cl/perfect_rl_logs_*/
+rl/rl_cl/perfect_rl_tensorboard_*/
+
