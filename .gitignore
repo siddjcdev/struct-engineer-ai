@@ -242,3 +242,5 @@ rl/rl_cl/perfect_rl_models_*/
 rl/rl_cl/perfect_rl_logs_*/
 rl/rl_cl/perfect_rl_tensorboard_*/
 
+matlab/src/v1/comparison_passive_fuzzy*.json
+matlab/src/v1/comparison_passive_fuzzy*.png
