@@ -233,9 +233,9 @@ for scenario_idx = 1:1 %n_scenarios
     % Simulate
     [x_passive, v_passive, a_passive] = newmark_simulate(M_passive, C_passive, K_passive, F_passive, t);
     
-    for print_idx = len(x_passive) -10 :len(x_passive)
-        fprintf('Simulate with newmark, x: %f, v: %f, a: %f \n',x_passive, v_passive, a_passive)
-    end
+    % for print_idx = length(x_passive) -10 :length(x_passive)
+    %     fprintf('Simulate with newmark, x: %f, v: %f, a: %f \n',x_passive, v_passive, a_passive)
+    % end
     % Extract results
     roof_passive = x_passive(N, :);
     drift_passive = compute_interstory_drifts(x_passive(1:N, :));
@@ -244,11 +244,12 @@ for scenario_idx = 1:1 %n_scenarios
     results.Passive.max_drift(scenario_idx) = max(abs(drift_passive(:)));
     results.Passive.DCR(scenario_idx) = compute_DCR(drift_passive);
     results.Passive.rms_roof(scenario_idx) = rms(roof_passive);
-    results.Passive.peak_force(scenario_idx) = 0;  % Passive has no active force
+    results.Passive.peak_force(scenario_idx) = 0;
     results.Passive.mean_force(scenario_idx) = 0;
     results.Passive.time(scenario_idx) = toc;
     
-    fprintf('Peak: %.4f m (%.2f s)\n', results.Passive.peak_roof(scenario_idx), results.Passive.time(scenario_idx));
+    % ✅ CHANGED: Display in cm
+    fprintf('Peak: %.2f cm (%.2f s)\n', results.Passive.peak_roof(scenario_idx)*100, results.Passive.time(scenario_idx));
     
     % ============================================================
     % CONTROLLER 2: FUZZY LOGIC (API)
@@ -262,13 +263,15 @@ for scenario_idx = 1:1 %n_scenarios
     tmd_disp = x_passive(N+1, :)';  % TMD is last DOF
     tmd_vel = v_passive(N+1, :)';
     
-    fprintf('roof_disp: %f,roof_vel:%f,tmd_disp:%f,tmd_vel:%f \n',roof_disp,roof_vel,tmd_disp,tmd_vel )
+    % for print_idx = length(roof_disp) -10 :length(roof_disp)
+    %     fprintf('roof_disp: %f,roof_vel:%f,tmd_disp:%f,tmd_vel:%f \n',roof_disp,roof_vel,tmd_disp,tmd_vel )
+    % end
 
     % Apply perturbations
     [roof_disp_pert, roof_vel_pert, tmd_disp_pert, tmd_vel_pert] = ...
         apply_perturbations(roof_disp, roof_vel, tmd_disp, tmd_vel, perturbations, dt);
     
-    fprintf('roof_disp_pert: %f,roof_vel_pert:%f,tmd_disp_pert:%f,tmd_vel_pert:%f \n',roof_disp_pert, roof_vel_pert, tmd_disp_pert, tmd_vel_pert)
+    %fprintf('roof_disp_pert: %f,roof_vel_pert:%f,tmd_disp_pert:%f,tmd_vel_pert:%f \n',roof_disp_pert, roof_vel_pert, tmd_disp_pert, tmd_vel_pert)
 
     % Get forces from Fuzzy API
     try
@@ -282,9 +285,10 @@ for scenario_idx = 1:1 %n_scenarios
     end
     
     % Re-simulate with fuzzy control
+    % ✅ FIX: Correct sign convention!
     F_fuzzy_active = [Fg; zeros(1, Nt)];
-    F_fuzzy_active(N, :) = F_fuzzy_active(N, :) - forces_fuzzy';      % Apply to roof (negative)
-    F_fuzzy_active(N+1, :) = F_fuzzy_active(N+1, :) + forces_fuzzy';  % Apply to TMD (positive)
+    F_fuzzy_active(N, :) = F_fuzzy_active(N, :) + forces_fuzzy';      % Roof (CHANGED: + not -)
+    F_fuzzy_active(N+1, :) = F_fuzzy_active(N+1, :) - forces_fuzzy';  % TMD (CHANGED: - not +)
     
     [x_fuzzy, v_fuzzy, a_fuzzy] = newmark_simulate(M_passive, C_passive, K_passive, F_fuzzy_active, t);
     
@@ -296,12 +300,13 @@ for scenario_idx = 1:1 %n_scenarios
     results.Fuzzy.max_drift(scenario_idx) = max(abs(drift_fuzzy(:)));
     results.Fuzzy.DCR(scenario_idx) = compute_DCR(drift_fuzzy);
     results.Fuzzy.rms_roof(scenario_idx) = rms(roof_fuzzy);
-    results.Fuzzy.peak_force(scenario_idx) = max(abs(forces_fuzzy))/1000;  % kN
-    results.Fuzzy.mean_force(scenario_idx) = mean(abs(forces_fuzzy))/1000;
+    results.Fuzzy.peak_force(scenario_idx) = max(abs(forces_fuzzy_kN));
+    results.Fuzzy.mean_force(scenario_idx) = mean(abs(forces_fuzzy_kN));
     results.Fuzzy.time(scenario_idx) = toc;
     
-    fprintf('Peak: %.4f m, Force: %.1f kN (%.2f s)\n', ...
-        results.Fuzzy.peak_roof(scenario_idx), results.Fuzzy.mean_force(scenario_idx), results.Fuzzy.time(scenario_idx));
+    % ✅ CHANGED: Display in cm
+    fprintf('Peak: %.2f cm, Force: %.1f kN (%.2f s)\n', ...
+    results.Fuzzy.peak_roof(scenario_idx)*100, results.Fuzzy.mean_force(scenario_idx), results.Fuzzy.time(scenario_idx));
     
     % ============================================================
     % CONTROLLER 3: RL (API)
@@ -322,8 +327,9 @@ for scenario_idx = 1:1 %n_scenarios
     
     % Re-simulate with RL control
     F_rl_active = [Fg; zeros(1, Nt)];
-    F_rl_active(N, :) = F_rl_active(N, :) - forces_rl';
-    F_rl_active(N+1, :) = F_rl_active(N+1, :) + forces_rl';
+    F_rl_active(N, :) = F_rl_active(N, :) + forces_rl';      % Roof (CHANGED)
+    F_rl_active(N+1, :) = F_rl_active(N+1, :) - forces_rl';  % TMD (CHANGED)
+
     
     [x_rl, v_rl, a_rl] = newmark_simulate(M_passive, C_passive, K_passive, F_rl_active, t);
     
@@ -335,12 +341,13 @@ for scenario_idx = 1:1 %n_scenarios
     results.RL_Base.max_drift(scenario_idx) = max(abs(drift_rl(:)));
     results.RL_Base.DCR(scenario_idx) = compute_DCR(drift_rl);
     results.RL_Base.rms_roof(scenario_idx) = rms(roof_rl);
-    results.RL_Base.peak_force(scenario_idx) = max(abs(forces_rl))/1000;
-    results.RL_Base.mean_force(scenario_idx) = mean(abs(forces_rl))/1000;
+    results.RL_Base.peak_force(scenario_idx) = max(abs(forces_rl_kN));
+    results.RL_Base.mean_force(scenario_idx) = mean(abs(forces_rl_kN));
     results.RL_Base.time(scenario_idx) = toc;
     
-    fprintf('Peak: %.4f m, Force: %.1f kN (%.2f s)\n', ...
-        results.RL.peak_roof(scenario_idx), results.RL.mean_force(scenario_idx), results.RL.time(scenario_idx));
+    % ✅ CHANGED: Display in cm
+    fprintf('Peak: %.2f cm, Force: %.1f kN (%.2f s)\n', ...
+    results.RL_Base.peak_roof(scenario_idx)*100, results.RL_Base.mean_force(scenario_idx), results.RL_Base.time(scenario_idx));
     
     fprintf('\n');
 
@@ -362,26 +369,27 @@ for scenario_idx = 1:1 %n_scenarios
     end
     
     % Re-simulate with RL control
-    F_rl_active = [Fg; zeros(1, Nt)];
-    F_rl_active(N, :) = F_rl_active(N, :) - forces_rl_cl';
-    F_rl_active(N+1, :) = F_rl_active(N+1, :) + forces_rl_cl';
+    F_rl_cl_active = [Fg; zeros(1, Nt)];
+    F_rl_cl_active(N, :) = F_rl_cl_active(N, :) + forces_rl_cl';      % Roof (CHANGED)
+    F_rl_cl_active(N+1, :) = F_rl_cl_active(N+1, :) - forces_rl_cl';  % TMD (CHANGED)
     
-    [x_rl, v_rl, a_rl] = newmark_simulate(M_passive, C_passive, K_passive, F_rl_active, t);
+    [x_rl_cl, v_rl_cl, a_rl_cl] = newmark_simulate(M_passive, C_passive, K_passive, F_rl_cl_active, t);
     
     % Extract results
-    roof_rl = x_rl(N, :);
-    drift_rl = compute_interstory_drifts(x_rl(1:N, :));
+    roof_rl_cl = x_rl_cl(N, :);
+    drift_rl_cl = compute_interstory_drifts(x_rl(1:N, :));
     
-    results.RL_CL.peak_roof(scenario_idx) = max(abs(roof_rl));
-    results.RL_CL.max_drift(scenario_idx) = max(abs(drift_rl(:)));
-    results.RL_CL.DCR(scenario_idx) = compute_DCR(drift_rl);
-    results.RL_CL.rms_roof(scenario_idx) = rms(roof_rl);
-    results.RL_CL.peak_force(scenario_idx) = max(abs(forces_rl_cl))/1000 ;
-    results.RL_CL.mean_force(scenario_idx) = mean(abs(forces_rl_cl))/1000 ;
+    results.RL_CL.peak_roof(scenario_idx) = max(abs(roof_rl_cl));
+    results.RL_CL.max_drift(scenario_idx) = max(abs(drift_rl_cl(:)));
+    results.RL_CL.DCR(scenario_idx) = compute_DCR(drift_rl_cl);
+    results.RL_CL.rms_roof(scenario_idx) = rms(roof_rl_cl);
+    results.RL_CL.peak_force(scenario_idx) = max(abs(forces_rl_cl_kN));
+    results.RL_CL.mean_force(scenario_idx) = mean(abs(forces_rl_cl_kN));
     results.RL_CL.time(scenario_idx) = toc;
-    
-    fprintf('Peak: %.4f m, Force: %.1f kN (%.2f s)\n', ...
-        results.RL_CL.peak_roof(scenario_idx), results.RL_CL.mean_force(scenario_idx), results.RL_CL.time(scenario_idx));
+
+    % ✅ CHANGED: Display in cm
+    fprintf('Peak: %.2f cm, Force: %.1f kN (%.2f s)\n', ...
+    results.RL_CL.peak_roof(scenario_idx)*100, results.RL_CL.mean_force(scenario_idx), results.RL_CL.time(scenario_idx));
     
     fprintf('\n');
 end
@@ -401,7 +409,7 @@ fprintf('═══════════════════════�
 fprintf('  CALCULATING IMPROVEMENTS\n');
 fprintf('════════════════════════════════════════════════════════\n\n');
 
-for ctrl = {'Fuzzy', 'Perfect_RL', 'RL_CL'}
+for ctrl = {'Fuzzy', 'RL_Base', 'RL_CL'}
     results.(ctrl{1}).improvement_roof = zeros(n_scenarios, 1);
     results.(ctrl{1}).improvement_drift = zeros(n_scenarios, 1);
     results.(ctrl{1}).improvement_DCR = zeros(n_scenarios, 1);
@@ -470,13 +478,18 @@ fprintf('═══════════════════════�
 
 fprintf('📋 Results Summary:\n');
 fprintf('  Scenarios tested: %d\n', n_scenarios);
-fprintf('  Avg Passive roof: %.4f m\n', mean(results.Passive.peak_roof(results.Passive.peak_roof > 0)));
-fprintf('  Avg Fuzzy roof:   %.4f m (%.1f%% improvement)\n', ...
-    mean(results.Fuzzy.peak_roof(results.Fuzzy.peak_roof > 0)), ...
+
+% ✅ CHANGED: Display in cm
+fprintf('  Avg Passive roof: %.2f cm\n', mean(results.Passive.peak_roof(results.Passive.peak_roof > 0))*100);
+fprintf('  Avg Fuzzy roof:   %.2f cm (%.1f%% improvement)\n', ...
+    mean(results.Fuzzy.peak_roof(results.Fuzzy.peak_roof > 0))*100, ...
     mean(results.Fuzzy.improvement_roof(results.Fuzzy.improvement_roof > 0)));
-fprintf('  Avg RL roof:      %.4f m (%.1f%% improvement)\n', ...
-    mean(results.Perfect_RL.peak_roof(results.Perfect_RL.peak_roof > 0)), ...
-    mean(results.Perfect_RL.improvement_roof(results.Perfect_RL.improvement_roof > 0)));
+fprintf('  Avg RL roof:      %.2f cm (%.1f%% improvement)\n', ...
+    mean(results.RL.peak_roof(results.RL.peak_roof > 0))*100, ...
+    mean(results.RL.improvement_roof(results.RL.improvement_roof > 0)));
+fprintf('  Avg RL_CL roof:   %.2f cm (%.1f%% improvement)\n', ...
+    mean(results.RL_CL.peak_roof(results.RL_CL.peak_roof > 0))*100, ...
+    mean(results.RL_CL.improvement_roof(results.RL_CL.improvement_roof > 0)));
 fprintf('\n');
 
 %% ================================================================
@@ -692,10 +705,11 @@ function display_results_table(results, scenarios)
     fprintf('                           COMPARISON RESULTS (4 CONTROLLERS)\n');
     fprintf('════════════════════════════════════════════════════════════════════════════════════════════════════\n\n');
     
+    % ✅ CHANGED: Header shows (cm) instead of (m)
     fprintf('%-10s | %10s | %12s | %12s | %12s | %12s\n', ...
             'Scenario', 'Passive', 'Fuzzy', 'RL Base', 'RL CL', 'Winner');
     fprintf('%-10s | %10s | %12s | %12s | %12s | %12s\n', ...
-            '', '(m)', '(m / %)', '(m / %)', '(m / %)', '');
+            '', '(cm)', '(cm / %)', '(cm / %)', '(cm / %)', '');
     fprintf('-----------+------------+--------------+--------------+--------------+--------------\n');
     
     for i = 1:length(scenarios)
@@ -706,8 +720,8 @@ function display_results_table(results, scenarios)
         fuzzy = results.Fuzzy.peak_roof(i);
         fuzzy_imp = results.Fuzzy.improvement_roof(i);
         
-        rl = results.RL.peak_roof(i);
-        rl_imp = results.RL.improvement_roof(i);
+        rl = results.RL_Base.peak_roof(i);
+        rl_imp = results.RL_Base.improvement_roof(i);
         
         rl_cl = results.RL_CL.peak_roof(i);
         rl_cl_imp = results.RL_CL.improvement_roof(i);
@@ -717,26 +731,29 @@ function display_results_table(results, scenarios)
         best_names = {'Fuzzy', 'RL Base', 'RL CL'};
         best = best_names{best_idx};
         
-        fprintf('%-10s | %7.4f   | %5.4f/%4.1f%% | %5.4f/%4.1f%% | %5.4f/%4.1f%% | %12s\n', ...
-                scenarios{i, 1}, passive, ...
-                fuzzy, fuzzy_imp, rl, rl_imp, rl_cl, rl_cl_imp, best);
+        % ✅ CHANGED: Display in cm (multiply by 100)
+        fprintf('%-10s | %7.2f   | %6.2f/%4.1f%% | %6.2f/%4.1f%% | %6.2f/%4.1f%% | %12s\n', ...
+                scenarios{i, 1}, passive*100, ...
+                fuzzy*100, fuzzy_imp, rl*100, rl_imp, rl_cl*100, rl_cl_imp, best);
     end
     
     fprintf('-----------+------------+--------------+--------------+--------------+--------------\n');
     
     % Averages
     valid = results.Passive.peak_roof > 0;
-    fprintf('%-10s | %7.4f   | %5.4f/%4.1f%% | %5.4f/%4.1f%% | %5.4f/%4.1f%% | %12s\n', ...
+    
+    % ✅ CHANGED: Display averages in cm
+    fprintf('%-10s | %7.2f   | %6.2f/%4.1f%% | %6.2f/%4.1f%% | %6.2f/%4.1f%% | %12s\n', ...
             'AVERAGE', ...
-            mean(results.Passive.peak_roof(valid)), ...
-            mean(results.Fuzzy.peak_roof(valid)), mean(results.Fuzzy.improvement_roof(valid)), ...
-            mean(results.RL.peak_roof(valid)), mean(results.RL.improvement_roof(valid)), ...
-            mean(results.RL_CL.peak_roof(valid)), mean(results.RL_CL.improvement_roof(valid)), ...
+            mean(results.Passive.peak_roof(valid))*100, ...
+            mean(results.Fuzzy.peak_roof(valid))*100, mean(results.Fuzzy.improvement_roof(valid)), ...
+            mean(results.RL.peak_roof(valid))*100, mean(results.RL.improvement_roof(valid)), ...
+            mean(results.RL_CL.peak_roof(valid))*100, mean(results.RL_CL.improvement_roof(valid)), ...
             '-');
     
     fprintf('\n');
     
-    % Force statistics
+    % Force statistics (already in kN, no change needed)
     fprintf('FORCE STATISTICS:\n');
     fprintf('%-15s | %12s | %12s | %15s\n', 'Controller', 'Avg (kN)', 'Max (kN)', 'Efficiency');
     fprintf('----------------+--------------+--------------+-----------------\n');
@@ -855,48 +872,53 @@ function create_comparison_plots(results, scenarios)
     % Plot 1: Peak Roof Displacement
     subplot(2, 3, 1);
     x = 1:n_scenarios;
-    width = 0.25;
-    bar(x - width, results.Passive.peak_roof(valid), width, 'FaceColor', [0.7 0.7 0.7]);
+    width = 0.22;
+    
+    % ✅ CHANGED: Convert to cm for plotting
+    bar(x - 1.5*width, results.Passive.peak_roof(valid)*100, width, 'FaceColor', [0.7 0.7 0.7]);
     hold on;
-    bar(x, results.Fuzzy.peak_roof(valid), width, 'FaceColor', [1 0.6 0]);
-    bar(x + width, results.Perfect_RL.peak_roof(valid), width, 'FaceColor', [0.2 0.8 0.2]);
+    bar(x - 0.5*width, results.Fuzzy.peak_roof(valid)*100, width, 'FaceColor', [1 0.6 0]);
+    bar(x + 0.5*width, results.RL.peak_roof(valid)*100, width, 'FaceColor', [0.3 0.5 0.8]);
+    bar(x + 1.5*width, results.RL_CL.peak_roof(valid)*100, width, 'FaceColor', [0.2 0.8 0.2]);
     hold off;
     
     set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
     xtickangle(45);
-    ylabel('Peak Roof Displacement (m)');
+    ylabel('Peak Roof Displacement (cm)');  % ✅ CHANGED: (cm)
     title('Peak Roof Displacement Comparison');
-    legend({'Passive', 'Fuzzy', 'Perfect RL'}, 'Location', 'best');
+    legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
     grid on;
     
     % Plot 2: Improvement vs Passive
     subplot(2, 3, 2);
-    bar(x - width/2, results.Fuzzy.improvement_roof(valid), width, 'FaceColor', [1 0.6 0]);
+    bar(x - width, results.Fuzzy.improvement_roof(valid), width, 'FaceColor', [1 0.6 0]);
     hold on;
-    bar(x + width/2, results.Perfect_RL.improvement_roof(valid), width, 'FaceColor', [0.2 0.8 0.2]);
+    bar(x, results.RL.improvement_roof(valid), width, 'FaceColor', [0.3 0.5 0.8]);
+    bar(x + width, results.RL_CL.improvement_roof(valid), width, 'FaceColor', [0.2 0.8 0.2]);
     hold off;
     
     set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
     xtickangle(45);
     ylabel('Improvement (%)');
     title('Improvement vs Passive TMD');
-    legend({'Fuzzy', 'Perfect RL'}, 'Location', 'best');
+    legend({'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
     grid on;
     yline(0, 'k--');
     
     % Plot 3: DCR Comparison
     subplot(2, 3, 3);
-    bar(x - width, results.Passive.DCR(valid), width, 'FaceColor', [0.7 0.7 0.7]);
+    bar(x - 1.5*width, results.Passive.DCR(valid), width, 'FaceColor', [0.7 0.7 0.7]);
     hold on;
-    bar(x, results.Fuzzy.DCR(valid), width, 'FaceColor', [1 0.6 0]);
-    bar(x + width, results.Perfect_RL.DCR(valid), width, 'FaceColor', [0.2 0.8 0.2]);
+    bar(x - 0.5*width, results.Fuzzy.DCR(valid), width, 'FaceColor', [1 0.6 0]);
+    bar(x + 0.5*width, results.RL.DCR(valid), width, 'FaceColor', [0.3 0.5 0.8]);
+    bar(x + 1.5*width, results.RL_CL.DCR(valid), width, 'FaceColor', [0.2 0.8 0.2]);
     hold off;
     
     set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
     xtickangle(45);
     ylabel('DCR');
     title('Demand-to-Capacity Ratio');
-    legend({'Passive', 'Fuzzy', 'Perfect RL'}, 'Location', 'best');
+    legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
     grid on;
     
     % Plot 4: Force Efficiency
@@ -904,29 +926,34 @@ function create_comparison_plots(results, scenarios)
     scatter(mean(results.Fuzzy.mean_force(valid)), mean(results.Fuzzy.improvement_roof(valid)), ...
             200, 'o', 'MarkerEdgeColor', [1 0.6 0], 'MarkerFaceColor', [1 0.6 0], 'LineWidth', 2);
     hold on;
-    scatter(mean(results.Perfect_RL.mean_force(valid)), mean(results.Perfect_RL.improvement_roof(valid)), ...
+    scatter(mean(results.RL.mean_force(valid)), mean(results.RL.improvement_roof(valid)), ...
+            200, 's', 'MarkerEdgeColor', [0.3 0.5 0.8], 'MarkerFaceColor', [0.3 0.5 0.8], 'LineWidth', 2);
+    scatter(mean(results.RL_CL.mean_force(valid)), mean(results.RL_CL.improvement_roof(valid)), ...
             200, 'd', 'MarkerEdgeColor', [0.2 0.8 0.2], 'MarkerFaceColor', [0.2 0.8 0.2], 'LineWidth', 2);
     hold off;
     
     xlabel('Average Force (kN)');
     ylabel('Average Improvement (%)');
     title('Force Efficiency');
-    legend({'Fuzzy', 'Perfect RL'}, 'Location', 'best');
+    legend({'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
     grid on;
     
     % Plot 5: Max Drift Comparison
     subplot(2, 3, 5);
-    bar(x - width, results.Passive.max_drift(valid)*100, width, 'FaceColor', [0.7 0.7 0.7]);
+    
+    % ✅ CHANGED: Already multiply by 100 for cm (keep as is)
+    bar(x - 1.5*width, results.Passive.max_drift(valid)*100, width, 'FaceColor', [0.7 0.7 0.7]);
     hold on;
-    bar(x, results.Fuzzy.max_drift(valid)*100, width, 'FaceColor', [1 0.6 0]);
-    bar(x + width, results.Perfect_RL.max_drift(valid)*100, width, 'FaceColor', [0.2 0.8 0.2]);
+    bar(x - 0.5*width, results.Fuzzy.max_drift(valid)*100, width, 'FaceColor', [1 0.6 0]);
+    bar(x + 0.5*width, results.RL.max_drift(valid)*100, width, 'FaceColor', [0.3 0.5 0.8]);
+    bar(x + 1.5*width, results.RL_CL.max_drift(valid)*100, width, 'FaceColor', [0.2 0.8 0.2]);
     hold off;
     
     set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
     xtickangle(45);
     ylabel('Max Drift (cm)');
     title('Maximum Inter-Story Drift');
-    legend({'Passive', 'Fuzzy', 'Perfect RL'}, 'Location', 'best');
+    legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
     grid on;
     
     % Plot 6: Robustness (TEST6 scenarios)
@@ -940,30 +967,33 @@ function create_comparison_plots(results, scenarios)
             test3_global = find(strcmp(scenarios(:, 1), 'TEST3'));
             
             fuzzy_baseline = results.Fuzzy.peak_roof(test3_global);
-            rl_baseline = results.Perfect_RL.peak_roof(test3_global);
+            rl_baseline = results.RL.peak_roof(test3_global);
+            rl_cl_baseline = results.RL_CL.peak_roof(test3_global);
             
             fuzzy_deg = (results.Fuzzy.peak_roof(test6_idx) - fuzzy_baseline) / fuzzy_baseline * 100;
-            rl_deg = (results.Perfect_RL.peak_roof(test6_idx) - rl_baseline) / rl_baseline * 100;
+            rl_deg = (results.RL.peak_roof(test6_idx) - rl_baseline) / rl_baseline * 100;
+            rl_cl_deg = (results.RL_CL.peak_roof(test6_idx) - rl_cl_baseline) / rl_cl_baseline * 100;
             
             stress_labels = scenarios(test6_idx, 1);
             x_stress = 1:length(test6_idx);
             
             plot(x_stress, fuzzy_deg, 'o-', 'Color', [1 0.6 0], 'LineWidth', 2, 'MarkerSize', 8);
             hold on;
-            plot(x_stress, rl_deg, 'd-', 'Color', [0.2 0.8 0.2], 'LineWidth', 2, 'MarkerSize', 8);
+            plot(x_stress, rl_deg, 's-', 'Color', [0.3 0.5 0.8], 'LineWidth', 2, 'MarkerSize', 8);
+            plot(x_stress, rl_cl_deg, 'd-', 'Color', [0.2 0.8 0.2], 'LineWidth', 2, 'MarkerSize', 8);
             hold off;
             
             set(gca, 'XTick', 1:length(test6_idx), 'XTickLabel', stress_labels);
             xtickangle(45);
             ylabel('Performance Degradation (%)');
             title('Robustness Under Perturbations');
-            legend({'Fuzzy', 'Perfect RL'}, 'Location', 'best');
+            legend({'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
             grid on;
             yline(0, 'k--');
         end
     end
     
-    sgtitle('Passive TMD vs Fuzzy Logic vs Perfect RL - Comprehensive Comparison', 'FontSize', 14, 'FontWeight', 'bold');
+    sgtitle('4-Way TMD Controller Comparison (Passive, Fuzzy, RL Baseline, RL CL)', 'FontSize', 14, 'FontWeight', 'bold');
     
     % Save figure
     saveas(fig, 'comparison_passive_fuzzy_rl.png');
