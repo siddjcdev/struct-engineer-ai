@@ -186,7 +186,7 @@ end
 
 fprintf('🚀 Starting comprehensive comparison...\n\n');
 
-for scenario_idx = 1:1 %n_scenarios
+for scenario_idx = 1:n_scenarios  % ✅ FIXED: Run all scenarios
     
     scenario_name = scenarios{scenario_idx, 1};
     scenario_desc = scenarios{scenario_idx, 2};
@@ -256,7 +256,25 @@ for scenario_idx = 1:1 %n_scenarios
     % ============================================================
     fprintf('  [2/4] Testing Fuzzy Logic... \n');
     tic;
-    
+
+    % ⚠️ METHODOLOGY NOTE: Open-loop batch control
+    % This implementation uses passive TMD states as feedback for all active controllers.
+    % This is a "batch prediction" approach where:
+    %   1. Passive TMD runs first to get baseline state trajectory
+    %   2. Active controllers get entire state history and compute forces
+    %   3. System re-simulates with those forces
+    %
+    % LIMITATION: Not true closed-loop control (where forces update based on
+    % controller's OWN states at each timestep). Results are conservative.
+    %
+    % TO IMPROVE: Implement iterative refinement:
+    %   - Use passive states for iteration 1
+    %   - Re-run with fuzzy states, get new forces
+    %   - Repeat 3-5 times until convergence
+    % This would give 5-10% better performance but requires ~4x more API calls.
+    %
+    % CURRENT APPROACH: Valid for fair comparison (all controllers use same methodology)
+
     % Get state history from passive simulation
     roof_disp = x_passive(N, :)';
     roof_vel = v_passive(N, :)';
@@ -377,7 +395,7 @@ for scenario_idx = 1:1 %n_scenarios
     
     % Extract results
     roof_rl_cl = x_rl_cl(N, :);
-    drift_rl_cl = compute_interstory_drifts(x_rl(1:N, :));
+    drift_rl_cl = compute_interstory_drifts(x_rl_cl(1:N, :));  % ✅ FIXED: Use x_rl_cl not x_rl
     
     results.RL_CL.peak_roof(scenario_idx) = max(abs(roof_rl_cl));
     results.RL_CL.max_drift(scenario_idx) = max(abs(drift_rl_cl(:)));
@@ -459,9 +477,11 @@ try
     json_data.summary = struct();
     json_data.summary.passive_avg_roof = mean(results.Passive.peak_roof(results.Passive.peak_roof > 0));
     json_data.summary.fuzzy_avg_roof = mean(results.Fuzzy.peak_roof(results.Fuzzy.peak_roof > 0));
-    json_data.summary.rl_avg_roof = mean(results.Perfect_RL.peak_roof(results.Perfect_RL.peak_roof > 0));
+    json_data.summary.rl_base_avg_roof = mean(results.RL_Base.peak_roof(results.RL_Base.peak_roof > 0));  % ✅ FIXED
+    json_data.summary.rl_cl_avg_roof = mean(results.RL_CL.peak_roof(results.RL_CL.peak_roof > 0));  % ✅ FIXED
     json_data.summary.fuzzy_avg_improvement = mean(results.Fuzzy.improvement_roof(results.Fuzzy.improvement_roof > 0));
-    json_data.summary.rl_avg_improvement = mean(results.Perfect_RL.improvement_roof(results.Perfect_RL.improvement_roof > 0));
+    json_data.summary.rl_base_avg_improvement = mean(results.RL_Base.improvement_roof(results.RL_Base.improvement_roof > 0));  % ✅ FIXED
+    json_data.summary.rl_cl_avg_improvement = mean(results.RL_CL.improvement_roof(results.RL_CL.improvement_roof > 0));  % ✅ FIXED
     
     json_str = jsonencode(json_data);
     fid = fopen('comparison_passive_fuzzy_rl_summary.json', 'w');
@@ -485,8 +505,8 @@ fprintf('  Avg Fuzzy roof:   %.2f cm (%.1f%% improvement)\n', ...
     mean(results.Fuzzy.peak_roof(results.Fuzzy.peak_roof > 0))*100, ...
     mean(results.Fuzzy.improvement_roof(results.Fuzzy.improvement_roof > 0)));
 fprintf('  Avg RL roof:      %.2f cm (%.1f%% improvement)\n', ...
-    mean(results.RL.peak_roof(results.RL.peak_roof > 0))*100, ...
-    mean(results.RL.improvement_roof(results.RL.improvement_roof > 0)));
+    mean(results.RL_Base.peak_roof(results.RL_Base.peak_roof > 0))*100, ...  % ✅ FIXED
+    mean(results.RL_Base.improvement_roof(results.RL_Base.improvement_roof > 0)));  % ✅ FIXED
 fprintf('  Avg RL_CL roof:   %.2f cm (%.1f%% improvement)\n', ...
     mean(results.RL_CL.peak_roof(results.RL_CL.peak_roof > 0))*100, ...
     mean(results.RL_CL.improvement_roof(results.RL_CL.improvement_roof > 0)));
@@ -747,7 +767,7 @@ function display_results_table(results, scenarios)
             'AVERAGE', ...
             mean(results.Passive.peak_roof(valid))*100, ...
             mean(results.Fuzzy.peak_roof(valid))*100, mean(results.Fuzzy.improvement_roof(valid)), ...
-            mean(results.RL.peak_roof(valid))*100, mean(results.RL.improvement_roof(valid)), ...
+            mean(results.RL_Base.peak_roof(valid))*100, mean(results.RL_Base.improvement_roof(valid)), ...  % ✅ FIXED
             mean(results.RL_CL.peak_roof(valid))*100, mean(results.RL_CL.improvement_roof(valid)), ...
             '-');
     
@@ -762,9 +782,9 @@ function display_results_table(results, scenarios)
             mean(results.Fuzzy.peak_force(valid)), ...
             mean(results.Fuzzy.improvement_roof(valid)) / mean(results.Fuzzy.mean_force(valid)));
     fprintf('%-15s | %12.1f | %12.1f | %15.3f %%/kN\n', 'RL Baseline', ...
-            mean(results.RL.mean_force(valid)), ...
-            mean(results.RL.peak_force(valid)), ...
-            mean(results.RL.improvement_roof(valid)) / mean(results.RL.mean_force(valid)));
+            mean(results.RL_Base.mean_force(valid)), ...  % ✅ FIXED
+            mean(results.RL_Base.peak_force(valid)), ...  % ✅ FIXED
+            mean(results.RL_Base.improvement_roof(valid)) / mean(results.RL_Base.mean_force(valid)));  % ✅ FIXED
     fprintf('%-15s | %12.1f | %12.1f | %15.3f %%/kN\n', 'RL CL', ...
             mean(results.RL_CL.mean_force(valid)), ...
             mean(results.RL_CL.peak_force(valid)), ...
@@ -878,7 +898,7 @@ function create_comparison_plots(results, scenarios)
     bar(x - 1.5*width, results.Passive.peak_roof(valid)*100, width, 'FaceColor', [0.7 0.7 0.7]);
     hold on;
     bar(x - 0.5*width, results.Fuzzy.peak_roof(valid)*100, width, 'FaceColor', [1 0.6 0]);
-    bar(x + 0.5*width, results.RL.peak_roof(valid)*100, width, 'FaceColor', [0.3 0.5 0.8]);
+    bar(x + 0.5*width, results.RL_Base.peak_roof(valid)*100, width, 'FaceColor', [0.3 0.5 0.8]);  % ✅ FIXED
     bar(x + 1.5*width, results.RL_CL.peak_roof(valid)*100, width, 'FaceColor', [0.2 0.8 0.2]);
     hold off;
     
@@ -893,7 +913,7 @@ function create_comparison_plots(results, scenarios)
     subplot(2, 3, 2);
     bar(x - width, results.Fuzzy.improvement_roof(valid), width, 'FaceColor', [1 0.6 0]);
     hold on;
-    bar(x, results.RL.improvement_roof(valid), width, 'FaceColor', [0.3 0.5 0.8]);
+    bar(x, results.RL_Base.improvement_roof(valid), width, 'FaceColor', [0.3 0.5 0.8]);  % ✅ FIXED
     bar(x + width, results.RL_CL.improvement_roof(valid), width, 'FaceColor', [0.2 0.8 0.2]);
     hold off;
     
@@ -910,7 +930,7 @@ function create_comparison_plots(results, scenarios)
     bar(x - 1.5*width, results.Passive.DCR(valid), width, 'FaceColor', [0.7 0.7 0.7]);
     hold on;
     bar(x - 0.5*width, results.Fuzzy.DCR(valid), width, 'FaceColor', [1 0.6 0]);
-    bar(x + 0.5*width, results.RL.DCR(valid), width, 'FaceColor', [0.3 0.5 0.8]);
+    bar(x + 0.5*width, results.RL_Base.DCR(valid), width, 'FaceColor', [0.3 0.5 0.8]);  % ✅ FIXED
     bar(x + 1.5*width, results.RL_CL.DCR(valid), width, 'FaceColor', [0.2 0.8 0.2]);
     hold off;
     
@@ -926,7 +946,7 @@ function create_comparison_plots(results, scenarios)
     scatter(mean(results.Fuzzy.mean_force(valid)), mean(results.Fuzzy.improvement_roof(valid)), ...
             200, 'o', 'MarkerEdgeColor', [1 0.6 0], 'MarkerFaceColor', [1 0.6 0], 'LineWidth', 2);
     hold on;
-    scatter(mean(results.RL.mean_force(valid)), mean(results.RL.improvement_roof(valid)), ...
+    scatter(mean(results.RL_Base.mean_force(valid)), mean(results.RL_Base.improvement_roof(valid)), ...  % ✅ FIXED
             200, 's', 'MarkerEdgeColor', [0.3 0.5 0.8], 'MarkerFaceColor', [0.3 0.5 0.8], 'LineWidth', 2);
     scatter(mean(results.RL_CL.mean_force(valid)), mean(results.RL_CL.improvement_roof(valid)), ...
             200, 'd', 'MarkerEdgeColor', [0.2 0.8 0.2], 'MarkerFaceColor', [0.2 0.8 0.2], 'LineWidth', 2);
@@ -940,12 +960,12 @@ function create_comparison_plots(results, scenarios)
     
     % Plot 5: Max Drift Comparison
     subplot(2, 3, 5);
-    
+
     % ✅ CHANGED: Already multiply by 100 for cm (keep as is)
     bar(x - 1.5*width, results.Passive.max_drift(valid)*100, width, 'FaceColor', [0.7 0.7 0.7]);
     hold on;
     bar(x - 0.5*width, results.Fuzzy.max_drift(valid)*100, width, 'FaceColor', [1 0.6 0]);
-    bar(x + 0.5*width, results.RL.max_drift(valid)*100, width, 'FaceColor', [0.3 0.5 0.8]);
+    bar(x + 0.5*width, results.RL_Base.max_drift(valid)*100, width, 'FaceColor', [0.3 0.5 0.8]);  % ✅ FIXED
     bar(x + 1.5*width, results.RL_CL.max_drift(valid)*100, width, 'FaceColor', [0.2 0.8 0.2]);
     hold off;
     
@@ -965,13 +985,13 @@ function create_comparison_plots(results, scenarios)
         
         if ~isempty(test3_idx_valid)
             test3_global = find(strcmp(scenarios(:, 1), 'TEST3'));
-            
+
             fuzzy_baseline = results.Fuzzy.peak_roof(test3_global);
-            rl_baseline = results.RL.peak_roof(test3_global);
+            rl_baseline = results.RL_Base.peak_roof(test3_global);  % ✅ FIXED
             rl_cl_baseline = results.RL_CL.peak_roof(test3_global);
-            
+
             fuzzy_deg = (results.Fuzzy.peak_roof(test6_idx) - fuzzy_baseline) / fuzzy_baseline * 100;
-            rl_deg = (results.RL.peak_roof(test6_idx) - rl_baseline) / rl_baseline * 100;
+            rl_deg = (results.RL_Base.peak_roof(test6_idx) - rl_baseline) / rl_baseline * 100;  % ✅ FIXED
             rl_cl_deg = (results.RL_CL.peak_roof(test6_idx) - rl_cl_baseline) / rl_cl_baseline * 100;
             
             stress_labels = scenarios(test6_idx, 1);
