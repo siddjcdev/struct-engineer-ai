@@ -115,8 +115,9 @@ end
 function run_quick_demo(API_URL, folder, N, m0, k0, zeta_target, dt, soft_story_idx, soft_story_factor, tmd_mass)
     fprintf('\n═══ QUICK DEMO: TEST3 ONLY ═══\n\n');
 
+    % Single scenario in proper row format (1x4 cell array)
     scenarios = {
-        'TEST3', 'Small Earthquake (M4.5)', fullfile(folder, 'TEST3_small_earthquake_M4.5.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0)
+        'TEST3', 'Small Earthquake (M4.5)', fullfile(folder, 'TEST3_small_earthquake_M4.5.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0);
     };
 
     results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt, soft_story_idx, soft_story_factor, tmd_mass);
@@ -457,6 +458,13 @@ function active_results = test_active_controller(x_passive, v_passive, M_passive
     try
         forces_kN = get_forces_from_api(roof_disp_pert, roof_vel_pert, tmd_disp_pert, tmd_vel_pert, API_URL, controller_type);
         forces = forces_kN * 1000;  % Convert kN to N
+
+        % Diagnostic output (first 5 timesteps)
+        % fprintf('  DEBUG %s - States: roof_d=%.4f, roof_v=%.4f, tmd_d=%.4f, tmd_v=%.4f\n', ...
+        %     upper(controller_type), roof_disp_pert(1), roof_vel_pert(1), tmd_disp_pert(1), tmd_vel_pert(1));
+        % fprintf('  DEBUG %s - Forces (kN): min=%.2f, max=%.2f, mean=%.2f, samples=[%.2f %.2f %.2f]\n', ...
+        %     upper(controller_type), min(forces_kN), max(forces_kN), mean(abs(forces_kN)), ...
+        %     forces_kN(1), forces_kN(2), forces_kN(3));
     catch ME
         fprintf('API FAILED: %s\n', ME.message);
         forces = zeros(Nt, 1);
@@ -652,15 +660,14 @@ function forces = get_forces_from_api(roof_disp, roof_vel, tmd_disp, tmd_vel, AP
     
     response = webwrite(endpoint, json_data, options);
     
-    switch controller_type
-        case 'fuzzy'
-            forces = response.forces;
-        case 'rl'
-            forces = response.forces;
-        case 'rl_cl'
-            forces = response.forces_kN;
-        otherwise
-            error('Unknown controller type: %s', controller_type);
+    % Extract forces from response
+    % All endpoints return 'forces' field in kN
+    if isfield(response, 'forces')
+        forces = response.forces;
+    elseif isfield(response, 'forces_kN')
+        forces = response.forces_kN;
+    else
+        error('API response missing forces field for %s', controller_type);
     end
     
     forces = forces(:);
@@ -678,8 +685,9 @@ function display_results_table(results, scenarios)
     fprintf('%-10s | %10s | %12s | %12s | %12s | %12s\n', ...
             '', '(cm)', '(cm / %)', '(cm / %)', '(cm / %)', '');
     fprintf('-----------+------------+--------------+--------------+--------------+--------------\n');
-    
-    for i = 1:length(scenarios)
+
+    n_scenarios = size(scenarios, 1);  % Get number of rows (scenarios)
+    for i = 1:n_scenarios
         passive = results.Passive.peak_roof(i);
         
         if passive == 0, continue; end
