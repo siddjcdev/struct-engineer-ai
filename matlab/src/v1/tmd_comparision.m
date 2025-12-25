@@ -276,10 +276,10 @@ for scenario_idx = 1:n_scenarios  % ✅ FIXED: Run all scenarios
     % CURRENT APPROACH: Valid for fair comparison (all controllers use same methodology)
 
     % Get state history from passive simulation
-    roof_disp = x_passive(N, :)';
-    roof_vel = v_passive(N, :)';
-    tmd_disp = x_passive(N+1, :)';  % TMD is last DOF
-    tmd_vel = v_passive(N+1, :)';
+    roof_disp = x_passive(N, :)';                      % Absolute roof displacement
+    roof_vel = v_passive(N, :)';                       % Absolute roof velocity
+    tmd_disp = x_passive(N+1, :)' - x_passive(N, :)';  % ✅ FIXED: RELATIVE TMD displacement
+    tmd_vel = v_passive(N+1, :)' - v_passive(N, :)';   % ✅ FIXED: RELATIVE TMD velocity
     
     % for print_idx = length(roof_disp) -10 :length(roof_disp)
     %     fprintf('roof_disp: %f,roof_vel:%f,tmd_disp:%f,tmd_vel:%f \n',roof_disp,roof_vel,tmd_disp,tmd_vel )
@@ -615,7 +615,7 @@ function drift = compute_interstory_drifts(x)
 end
 
 function DCR = compute_DCR(drift)
-    % Compute Demand-to-Capacity Ratio
+    % Compute Drift Concentration Ratio
     peak_per_story = max(abs(drift), [], 2);
     sorted_peaks = sort(peak_per_story);
     n = length(sorted_peaks);
