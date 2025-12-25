@@ -4,9 +4,14 @@
 %
 % Compares FOUR controllers across 8 test scenarios:
 %   1. Passive TMD (mechanical, optimized)
-%   2. Fuzzy Logic Control (REST API)
-%   3. RL Baseline (REST API)
-%   4. RL with Curriculum Learning (REST API)
+%   2. Fuzzy Logic Control (REST API - batch prediction)
+%   3. RL Baseline (REST API - batch prediction)
+%   4. RL with Curriculum Learning (REST API - FULL SIMULATION)
+%
+% IMPORTANT: RL_CL uses /rl-cl/simulate endpoint which runs the full
+% simulation in the Python environment and returns comprehensive metrics
+% (DCR, RMS, max drift, forces). This ensures RL_CL is tested with the
+% same physics it was trained on.
 %
 % Test Scenarios:
 %   - TEST3: Small Earthquake (M4.5)
@@ -320,11 +325,10 @@ function results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt
         fprintf('Peak: %.2f cm, Force: %.1f kN (%.2f s)\n', ...
             rl_results.peak_roof*100, rl_results.mean_force, results.RL_Base.time(scenario_idx));
 
-        % ========== TEST 4: RL_CL ==========
-        fprintf('  [4/4] Testing RL_CL... ');
+        % ========== TEST 4: RL_CL (using /rl-cl/simulate endpoint) ==========
+        fprintf('  [4/4] Testing RL_CL (full simulation)... ');
         tic;
-        rl_cl_results = test_active_controller(x_passive, v_passive, M_passive, K_passive, C_passive,...
-            Fg, t, N, Nt, API_URL, 'rl_cl', perturbations, dt);
+        rl_cl_results = test_rl_cl_simulate(ag, dt, API_URL);
         results.RL_CL.peak_roof(scenario_idx) = rl_cl_results.peak_roof;
         results.RL_CL.max_drift(scenario_idx) = rl_cl_results.max_drift;
         results.RL_CL.DCR(scenario_idx) = rl_cl_results.DCR;
@@ -636,16 +640,16 @@ function forces = get_forces_from_api(roof_disp, roof_vel, tmd_disp, tmd_vel, AP
         'tmd_displacements', tmd_disp, ...
         'tmd_velocities', tmd_vel ...
     );
-    
+
     json_data = jsonencode(batch_data);
-    
+
     options = weboptions(...
         'MediaType', 'application/json', ...
         'ContentType', 'json', ...
         'Timeout', 120, ...
         'RequestMethod', 'post' ...
     );
-    
+
     % Select endpoint
     switch controller_type
         case 'fuzzy'
@@ -657,9 +661,9 @@ function forces = get_forces_from_api(roof_disp, roof_vel, tmd_disp, tmd_vel, AP
         otherwise
             error('Unknown controller type: %s', controller_type);
     end
-    
+
     response = webwrite(endpoint, json_data, options);
-    
+
     % Extract forces from response
     % All endpoints return 'forces' field in kN
     if isfield(response, 'forces')
@@ -669,8 +673,57 @@ function forces = get_forces_from_api(roof_disp, roof_vel, tmd_disp, tmd_vel, AP
     else
         error('API response missing forces field for %s', controller_type);
     end
-    
+
     forces = forces(:);
+end
+
+function rl_cl_results = test_rl_cl_simulate(earthquake_data, dt, API_URL)
+    % Test RL_CL controller using full simulation endpoint
+    % This endpoint runs the simulation in the RL environment and returns
+    % comprehensive metrics including DCR, RMS, max drift, and forces
+
+    % Prepare request data
+    sim_data = struct(...
+        'earthquake_data', earthquake_data(:)', ...  % Row vector
+        'dt', dt ...
+    );
+
+    json_data = jsonencode(sim_data);
+
+    options = weboptions(...
+        'MediaType', 'application/json', ...
+        'ContentType', 'json', ...
+        'Timeout', 300, ...  % 5 minutes for full simulation
+        'RequestMethod', 'post' ...
+    );
+
+    % Call simulate endpoint
+    endpoint = [API_URL 'rl-cl/simulate'];
+
+    try
+        response = webwrite(endpoint, json_data, options);
+
+        % Extract metrics from response
+        % All metrics are already calculated by the API
+        rl_cl_results.peak_roof = response.peak_roof_displacement;  % meters
+        rl_cl_results.rms_roof = response.rms_roof_displacement;    % meters
+        rl_cl_results.max_drift = response.max_drift;               % meters
+        rl_cl_results.DCR = response.DCR;                           % dimensionless
+        rl_cl_results.peak_force = response.peak_force_kN;          % kN
+        rl_cl_results.mean_force = response.mean_force_kN;          % kN
+
+    catch ME
+        fprintf('  ⚠️  RL_CL SIMULATE API FAILED: %s\n', ME.message);
+        fprintf('     Using fallback values (zeros)\n');
+
+        % Return zero results on failure
+        rl_cl_results.peak_roof = 0;
+        rl_cl_results.rms_roof = 0;
+        rl_cl_results.max_drift = 0;
+        rl_cl_results.DCR = 0;
+        rl_cl_results.peak_force = 0;
+        rl_cl_results.mean_force = 0;
+    end
 end
 
 function display_results_table(results, scenarios)
