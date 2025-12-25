@@ -35,7 +35,11 @@ from models.tmd_models import (
 
 from rl_baseline.rl_controller import RLTMDController, RLSingleRequest, RLSingleResponse,RLBatchRequest, RLBatchResponse
 
-from rl_cl.RLCLController import RLCLBatchRequest, RLCLBatchResponse, RLCLController, RLCLSingleRequest, RLCLSingleResponse
+from rl_cl.RLCLController import (
+    RLCLBatchRequest, RLCLBatchResponse, RLCLController,
+    RLCLSingleRequest, RLCLSingleResponse,
+    RLCLSimulationRequest, RLCLSimulationResponse
+)
 
 # ============================================================================
 # FastAPI App
@@ -161,6 +165,7 @@ async def root():
             "RL-CL": {
                 "rl_single": "POST /rl-cl/predict",
                 "rl_batch": "POST /rl-cl/predict-batch",
+                "rl_simulate": "POST /rl-cl/simulate (with full metrics)",
                 "rl_status": "GET /rl-cl/health",
                 "rl_info": "GET /rl-cl/info",
             },
@@ -550,6 +555,60 @@ async def info():
         "avg_force": "~85 kN",
         "robustness": "Excellent (< 3% degradation)"
     }
+
+
+@app.post("/rl-cl/simulate", response_model=RLCLSimulationResponse, tags=["Reinforcement Learning CL"])
+async def simulate(request: RLCLSimulationRequest):
+    """
+    Run full earthquake simulation with RL-CL controller
+
+    Returns all performance metrics including:
+    - RMS of roof displacement
+    - Peak roof displacement
+    - Maximum interstory drift
+    - DCR (Drift Concentration Ratio)
+    - Peak and mean control forces
+    """
+    if rl_cl_controller is None:
+        raise HTTPException(status_code=503, detail="RL-CL Model not loaded")
+
+    import numpy as np
+
+    # Validate inputs
+    if len(request.earthquake_data) == 0:
+        raise HTTPException(
+            status_code=422,
+            detail="Earthquake data cannot be empty"
+        )
+
+    start = time.time()
+
+    try:
+        # Run simulation
+        metrics = rl_cl_controller.simulate_episode(
+            earthquake_data=np.array(request.earthquake_data),
+            dt=request.dt
+        )
+
+        elapsed = (time.time() - start) * 1000
+
+        return RLCLSimulationResponse(
+            forces_N=metrics['forces_N'],
+            forces_kN=metrics['forces_kN'],
+            count=len(metrics['forces_N']),
+            rms_roof_displacement=metrics['rms_roof_displacement'],
+            peak_roof_displacement=metrics['peak_roof_displacement'],
+            max_drift=metrics['max_drift'],
+            DCR=metrics['DCR'],
+            peak_force=metrics['peak_force'],
+            mean_force=metrics['mean_force'],
+            peak_force_kN=metrics['peak_force_kN'],
+            mean_force_kN=metrics['mean_force_kN'],
+            simulation_time_ms=elapsed
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Simulation error: {str(e)}")
 
 # ============================================================================
 # MAIN ENTRY POINT  
