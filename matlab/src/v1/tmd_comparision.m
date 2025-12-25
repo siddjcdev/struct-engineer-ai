@@ -303,10 +303,10 @@ for scenario_idx = 1:n_scenarios  % ✅ FIXED: Run all scenarios
     end
     
     % Re-simulate with fuzzy control
-    % ✅ FIX: Correct sign convention!
+    % ✅ FIX: Correct sign convention (Newton's 3rd law)
     F_fuzzy_active = [Fg; zeros(1, Nt)];
-    F_fuzzy_active(N, :) = F_fuzzy_active(N, :) + forces_fuzzy';      % Roof (CHANGED: + not -)
-    F_fuzzy_active(N+1, :) = F_fuzzy_active(N+1, :) - forces_fuzzy';  % TMD (CHANGED: - not +)
+    F_fuzzy_active(N, :) = F_fuzzy_active(N, :) - forces_fuzzy';      % Roof (reaction force)
+    F_fuzzy_active(N+1, :) = F_fuzzy_active(N+1, :) + forces_fuzzy';  % TMD (actuator force)
     
     [x_fuzzy, v_fuzzy, a_fuzzy] = newmark_simulate(M_passive, C_passive, K_passive, F_fuzzy_active, t);
     
@@ -345,8 +345,8 @@ for scenario_idx = 1:n_scenarios  % ✅ FIXED: Run all scenarios
     
     % Re-simulate with RL control
     F_rl_active = [Fg; zeros(1, Nt)];
-    F_rl_active(N, :) = F_rl_active(N, :) + forces_rl';      % Roof (CHANGED)
-    F_rl_active(N+1, :) = F_rl_active(N+1, :) - forces_rl';  % TMD (CHANGED)
+    F_rl_active(N, :) = F_rl_active(N, :) - forces_rl';      % Roof (reaction force)
+    F_rl_active(N+1, :) = F_rl_active(N+1, :) + forces_rl';  % TMD (actuator force)
 
     
     [x_rl, v_rl, a_rl] = newmark_simulate(M_passive, C_passive, K_passive, F_rl_active, t);
@@ -388,8 +388,8 @@ for scenario_idx = 1:n_scenarios  % ✅ FIXED: Run all scenarios
     
     % Re-simulate with RL control
     F_rl_cl_active = [Fg; zeros(1, Nt)];
-    F_rl_cl_active(N, :) = F_rl_cl_active(N, :) + forces_rl_cl';      % Roof (CHANGED)
-    F_rl_cl_active(N+1, :) = F_rl_cl_active(N+1, :) - forces_rl_cl';  % TMD (CHANGED)
+    F_rl_cl_active(N, :) = F_rl_cl_active(N, :) - forces_rl_cl';      % Roof (reaction force)
+    F_rl_cl_active(N+1, :) = F_rl_cl_active(N+1, :) + forces_rl_cl';  % TMD (actuator force)
     
     [x_rl_cl, v_rl_cl, a_rl_cl] = newmark_simulate(M_passive, C_passive, K_passive, F_rl_cl_active, t);
     
