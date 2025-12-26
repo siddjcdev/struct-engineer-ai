@@ -29,38 +29,72 @@ class RLCLController:
     
     def __init__(self, model_path: str):
         print(f"RLCLController: Loading RL CL model from {model_path}...")
-        
+
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"RLCLController: Model not found: {model_path}")
-        
+
         # Load SAC model
         self.model = SAC.load(model_path, device='cpu')
         self.max_force = 150000.0  # 150 kN
-        
+
+        # SAFETY: Observation bounds (MUST match training environment)
+        # These bounds prevent out-of-distribution inputs on extreme earthquakes
+        self.obs_bounds = {
+            'roof_disp': (-0.5, 0.5),      # ±50 cm
+            'roof_vel': (-2.0, 2.0),       # ±2.0 m/s
+            'tmd_disp': (-0.6, 0.6),       # ±60 cm
+            'tmd_vel': (-2.5, 2.5)         # ±2.5 m/s
+        }
+        self.clip_warnings = 0  # Track how many times we clip observations
+
         print("✅ RLCLController: RL CL model loaded!")
         print("   RLCLController: RL CL performance:")
         print("   RLCLController:     • TEST3 (M4.5): 24.67 cm (21.8% vs passive)")
         print("   RLCLController:     • TEST4 (M6.9): 20.80 cm (32% vs passive)")
         print("   RLCLController:     • Average: ~21.5 cm, Beats fuzzy by 14%")
+        print(f"   RLCLController:     • Observation bounds: roof_disp={self.obs_bounds['roof_disp']}, "
+              f"roof_vel={self.obs_bounds['roof_vel']}")
     
     def predict_single(self, roof_disp, roof_vel, tmd_disp, tmd_vel):
-        """Single prediction"""
-        obs = np.array([roof_disp, roof_vel, tmd_disp, tmd_vel], dtype=np.float32)
+        """Single prediction with safety clipping"""
+        # SAFETY: Clip observations to training bounds
+        roof_disp_clip = np.clip(roof_disp, *self.obs_bounds['roof_disp'])
+        roof_vel_clip = np.clip(roof_vel, *self.obs_bounds['roof_vel'])
+        tmd_disp_clip = np.clip(tmd_disp, *self.obs_bounds['tmd_disp'])
+        tmd_vel_clip = np.clip(tmd_vel, *self.obs_bounds['tmd_vel'])
+
+        if (roof_disp_clip != roof_disp or roof_vel_clip != roof_vel or
+            tmd_disp_clip != tmd_disp or tmd_vel_clip != tmd_vel):
+            self.clip_warnings += 1
+            if self.clip_warnings <= 5:  # Only print first 5 warnings
+                print(f"⚠️  RL-CL SAFETY: Observation out of bounds, clipping to training range")
+                print(f"    Original: roof_d={roof_disp:.3f}, roof_v={roof_vel:.3f}, "
+                      f"tmd_d={tmd_disp:.3f}, tmd_v={tmd_vel:.3f}")
+                print(f"    Clipped:  roof_d={roof_disp_clip:.3f}, roof_v={roof_vel_clip:.3f}, "
+                      f"tmd_d={tmd_disp_clip:.3f}, tmd_v={tmd_vel_clip:.3f}")
+
+        obs = np.array([roof_disp_clip, roof_vel_clip, tmd_disp_clip, tmd_vel_clip], dtype=np.float32)
         action, _ = self.model.predict(obs, deterministic=True)
         force = float(action[0]) * self.max_force
         return np.clip(force, -self.max_force, self.max_force)
     
     def predict_batch(self, roof_disp_list, roof_vel_list, tmd_disp_list, tmd_vel_list):
-        """Batch prediction"""
+        """Batch prediction with safety clipping"""
         n = len(roof_disp_list)
         forces = np.zeros(n)
 
         for i in range(n):
+            # SAFETY: Clip each observation to training bounds
+            roof_disp_clip = np.clip(roof_disp_list[i], *self.obs_bounds['roof_disp'])
+            roof_vel_clip = np.clip(roof_vel_list[i], *self.obs_bounds['roof_vel'])
+            tmd_disp_clip = np.clip(tmd_disp_list[i], *self.obs_bounds['tmd_disp'])
+            tmd_vel_clip = np.clip(tmd_vel_list[i], *self.obs_bounds['tmd_vel'])
+
             obs = np.array([
-                roof_disp_list[i],
-                roof_vel_list[i],
-                tmd_disp_list[i],
-                tmd_vel_list[i]
+                roof_disp_clip,
+                roof_vel_clip,
+                tmd_disp_clip,
+                tmd_vel_clip
             ], dtype=np.float32)
 
             action, _ = self.model.predict(obs, deterministic=True)
@@ -104,8 +138,16 @@ class RLCLController:
             forces = []
 
             while not done:
+                # SAFETY: Clip observation to training bounds before inference
+                # This prevents catastrophic failures on extreme earthquakes
+                obs_clipped = np.clip(obs,
+                                     [self.obs_bounds['roof_disp'][0], self.obs_bounds['roof_vel'][0],
+                                      self.obs_bounds['tmd_disp'][0], self.obs_bounds['tmd_vel'][0]],
+                                     [self.obs_bounds['roof_disp'][1], self.obs_bounds['roof_vel'][1],
+                                      self.obs_bounds['tmd_disp'][1], self.obs_bounds['tmd_vel'][1]])
+
                 # Get action from model
-                action, _ = self.model.predict(obs, deterministic=True)
+                action, _ = self.model.predict(obs_clipped, deterministic=True)
                 forces.append(float(action[0]) * self.max_force)
 
                 # Step environment
