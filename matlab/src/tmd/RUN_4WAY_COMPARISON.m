@@ -41,8 +41,18 @@ function RUN_4WAY_COMPARISON()
     fprintf('╚════════════════════════════════════════════════════════╝\n\n');
 
     % ========== UPDATE THIS WITH YOUR API URL ==========
+    % IMPORTANT: Must end with trailing slash '/'
+    % Examples:
+    %   API_URL = 'http://localhost:8080/';
+    %   API_URL = 'https://your-api.run.app/';
     API_URL = 'https://perfect-rl-api-887344515766.us-east4.run.app/';
     % ===================================================
+
+    % Auto-fix: Add trailing slash if missing
+    if ~endsWith(API_URL, '/')
+        API_URL = [API_URL '/'];
+        fprintf('ℹ️  Added trailing slash to API_URL: %s\n', API_URL);
+    end
 
     % Building parameters (matching your v7/v8 setup)
     N = 12;                      % 12 floors
