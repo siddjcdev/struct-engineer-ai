@@ -445,14 +445,17 @@ end
 
 function active_results = test_active_controller(x_passive, v_passive, M_passive, K_passive, C_passive,...
     Fg, t, N, Nt, API_URL, controller_type, perturbations, dt)
-    % Test active controller (Fuzzy, RL, or RL_CL)
-    
-    % Get state history from passive simulation (RELATIVE TMD states)
-    roof_disp = x_passive(N, :)';
-    roof_vel = v_passive(N, :)';
-    tmd_disp = x_passive(N+1, :)' - x_passive(N, :)';  % RELATIVE
-    tmd_vel = v_passive(N+1, :)' - v_passive(N, :)';   % RELATIVE
-    
+    % Test active controller (Fuzzy only - RL controllers use simulate endpoints)
+    %
+    % IMPORTANT: Fuzzy controller expects ABSOLUTE TMD states (not relative)
+    % because it computes relative states internally
+
+    % Get state history from passive simulation
+    roof_disp = x_passive(N, :)';      % ABSOLUTE roof displacement
+    roof_vel = v_passive(N, :)';       % ABSOLUTE roof velocity
+    tmd_disp = x_passive(N+1, :)';     % ABSOLUTE TMD displacement (NOT relative!)
+    tmd_vel = v_passive(N+1, :)';      % ABSOLUTE TMD velocity (NOT relative!)
+
     % Apply perturbations
     [roof_disp_pert, roof_vel_pert, tmd_disp_pert, tmd_vel_pert] = ...
         apply_perturbations(roof_disp, roof_vel, tmd_disp, tmd_vel, perturbations, dt);
