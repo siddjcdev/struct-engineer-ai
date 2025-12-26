@@ -951,13 +951,14 @@ function create_comparison_plots(results, scenarios)
     legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
     grid on;
     
+    % Plot 2: Improvement vs Passive
     subplot(2, 3, 2);
     bar(x - width, results.Fuzzy.improvement_roof(valid), width, 'FaceColor', [1 0.6 0]);
     hold on;
     bar(x, results.RL_Base.improvement_roof(valid), width, 'FaceColor', [0.3 0.5 0.8]);
     bar(x + width, results.RL_CL.improvement_roof(valid), width, 'FaceColor', [0.2 0.8 0.2]);
     hold off;
-    
+
     set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
     xtickangle(45);
     ylabel('Improvement (%)');
@@ -965,9 +966,99 @@ function create_comparison_plots(results, scenarios)
     legend({'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
     grid on;
     yline(0, 'k--');
-    
+
+    % Plot 3: DCR Comparison
+    subplot(2, 3, 3);
+    bar(x - 1.5*width, results.Passive.DCR(valid), width, 'FaceColor', [0.7 0.7 0.7]);
+    hold on;
+    bar(x - 0.5*width, results.Fuzzy.DCR(valid), width, 'FaceColor', [1 0.6 0]);
+    bar(x + 0.5*width, results.RL_Base.DCR(valid), width, 'FaceColor', [0.3 0.5 0.8]);
+    bar(x + 1.5*width, results.RL_CL.DCR(valid), width, 'FaceColor', [0.2 0.8 0.2]);
+    hold off;
+
+    set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
+    xtickangle(45);
+    ylabel('DCR');
+    title('Drift Concentration Ratio');
+    legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
+    grid on;
+
+    % Plot 4: Force Efficiency
+    subplot(2, 3, 4);
+    scatter(mean(results.Fuzzy.mean_force(valid)), mean(results.Fuzzy.improvement_roof(valid)), ...
+            200, 'o', 'MarkerEdgeColor', [1 0.6 0], 'MarkerFaceColor', [1 0.6 0], 'LineWidth', 2);
+    hold on;
+    scatter(mean(results.RL_Base.mean_force(valid)), mean(results.RL_Base.improvement_roof(valid)), ...
+            200, 's', 'MarkerEdgeColor', [0.3 0.5 0.8], 'MarkerFaceColor', [0.3 0.5 0.8], 'LineWidth', 2);
+    scatter(mean(results.RL_CL.mean_force(valid)), mean(results.RL_CL.improvement_roof(valid)), ...
+            200, 'd', 'MarkerEdgeColor', [0.2 0.8 0.2], 'MarkerFaceColor', [0.2 0.8 0.2], 'LineWidth', 2);
+    hold off;
+
+    xlabel('Average Force (kN)');
+    ylabel('Average Improvement (%)');
+    title('Force Efficiency');
+    legend({'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
+    grid on;
+
+    % Plot 5: Max Drift Comparison
+    subplot(2, 3, 5);
+    bar(x - 1.5*width, results.Passive.max_drift(valid)*100, width, 'FaceColor', [0.7 0.7 0.7]);
+    hold on;
+    bar(x - 0.5*width, results.Fuzzy.max_drift(valid)*100, width, 'FaceColor', [1 0.6 0]);
+    bar(x + 0.5*width, results.RL_Base.max_drift(valid)*100, width, 'FaceColor', [0.3 0.5 0.8]);
+    bar(x + 1.5*width, results.RL_CL.max_drift(valid)*100, width, 'FaceColor', [0.2 0.8 0.2]);
+    hold off;
+
+    set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
+    xtickangle(45);
+    ylabel('Max Drift (cm)');
+    title('Maximum Inter-Story Drift');
+    legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
+    grid on;
+
+    % Plot 6: Robustness (Perturbation scenarios)
+    subplot(2, 3, 6);
+    % Find perturbation scenarios (Mod_10Noise, Mod_60Latency, etc.)
+    stress_idx = find(valid & startsWith(scenario_labels, 'Mod_'));
+
+    if ~isempty(stress_idx)
+        % Find baseline (PEER_Moderate) for comparison
+        baseline_idx_valid = find(valid & strcmp(scenario_labels, 'PEER_Moderate'));
+
+        if ~isempty(baseline_idx_valid)
+            % Find global index for baseline
+            baseline_global = find(strcmp(scenarios(:, 1), 'PEER_Moderate'));
+
+            % Calculate performance degradation vs baseline
+            fuzzy_baseline = results.Fuzzy.peak_roof(baseline_global);
+            rl_baseline = results.RL_Base.peak_roof(baseline_global);
+            rl_cl_baseline = results.RL_CL.peak_roof(baseline_global);
+
+            fuzzy_deg = (results.Fuzzy.peak_roof(valid) - fuzzy_baseline) / fuzzy_baseline * 100;
+            rl_deg = (results.RL_Base.peak_roof(valid) - rl_baseline) / rl_baseline * 100;
+            rl_cl_deg = (results.RL_CL.peak_roof(valid) - rl_cl_baseline) / rl_cl_baseline * 100;
+
+            stress_labels_subset = scenario_labels(stress_idx);
+            x_stress = 1:length(stress_idx);
+
+            plot(x_stress, fuzzy_deg(stress_idx), 'o-', 'Color', [1 0.6 0], 'LineWidth', 2, 'MarkerSize', 8);
+            hold on;
+            plot(x_stress, rl_deg(stress_idx), 's-', 'Color', [0.3 0.5 0.8], 'LineWidth', 2, 'MarkerSize', 8);
+            plot(x_stress, rl_cl_deg(stress_idx), 'd-', 'Color', [0.2 0.8 0.2], 'LineWidth', 2, 'MarkerSize', 8);
+            hold off;
+
+            set(gca, 'XTick', 1:length(stress_idx), 'XTickLabel', stress_labels_subset);
+            xtickangle(45);
+            ylabel('Performance Degradation (%)');
+            title('Robustness Under Perturbations');
+            legend({'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
+            grid on;
+            yline(0, 'k--');
+        end
+    end
+
     sgtitle('4-Way TMD Controller Comparison', 'FontSize', 14, 'FontWeight', 'bold');
-    
+
     saveas(fig, '4way_comparison_plots.png');
 end
 
