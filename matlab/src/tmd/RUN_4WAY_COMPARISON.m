@@ -930,33 +930,34 @@ function create_comparison_plots(results, scenarios)
     valid = results.Passive.peak_roof > 0;
     scenario_labels = scenarios(valid, 1);
     n_scenarios = sum(valid);
-    
+
     fig = figure('Position', [100 100 1600 1000], 'Color', 'w');
-    
+
+    % Plot 1: Peak Roof Displacement
     subplot(2, 3, 1);
     x = 1:n_scenarios;
     width = 0.22;
-    
+
     bar(x - 1.5*width, results.Passive.peak_roof(valid)*100, width, 'FaceColor', [0.7 0.7 0.7]);
     hold on;
     bar(x - 0.5*width, results.Fuzzy.peak_roof(valid)*100, width, 'FaceColor', [1 0.6 0]);
     bar(x + 0.5*width, results.RL_Base.peak_roof(valid)*100, width, 'FaceColor', [0.3 0.5 0.8]);
     bar(x + 1.5*width, results.RL_CL.peak_roof(valid)*100, width, 'FaceColor', [0.2 0.8 0.2]);
     hold off;
-    
+
     set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
     xtickangle(45);
     ylabel('Peak Roof Displacement (cm)');
     title('Peak Roof Displacement Comparison');
     legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
     grid on;
-    
-    % Plot 2: Improvement vs Passive
+
+    % Plot 2: Improvement vs Passive (with failure annotation)
     subplot(2, 3, 2);
-    bar(x - width, results.Fuzzy.improvement_roof(valid), width, 'FaceColor', [1 0.6 0]);
+    h_fuzzy = bar(x - width, results.Fuzzy.improvement_roof(valid), width, 'FaceColor', [1 0.6 0]);
     hold on;
-    bar(x, results.RL_Base.improvement_roof(valid), width, 'FaceColor', [0.3 0.5 0.8]);
-    bar(x + width, results.RL_CL.improvement_roof(valid), width, 'FaceColor', [0.2 0.8 0.2]);
+    h_rl = bar(x, results.RL_Base.improvement_roof(valid), width, 'FaceColor', [0.3 0.5 0.8]);
+    h_rl_cl = bar(x + width, results.RL_CL.improvement_roof(valid), width, 'FaceColor', [0.2 0.8 0.2]);
     hold off;
 
     set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
@@ -967,8 +968,68 @@ function create_comparison_plots(results, scenarios)
     grid on;
     yline(0, 'k--');
 
-    % Plot 3: DCR Comparison
+    % Add annotation for catastrophic failure (if any negative values < -100%)
+    rl_improvements = results.RL_Base.improvement_roof(valid);
+    failure_idx = find(rl_improvements < -100);
+    if ~isempty(failure_idx)
+        for i = 1:length(failure_idx)
+            idx = failure_idx(i);
+            y_val = rl_improvements(idx);
+            text(idx, y_val - 20, sprintf('RL Base FAILURE: %.0f%%', y_val), ...
+                'HorizontalAlignment', 'center', 'Color', 'red', 'FontWeight', 'bold', 'FontSize', 9);
+        end
+    end
+
+    % Plot 3: Force Efficiency (SWAPPED from plot 4)
     subplot(2, 3, 3);
+    avg_fuzzy_force = mean(results.Fuzzy.mean_force(valid));
+    avg_fuzzy_imp = mean(results.Fuzzy.improvement_roof(valid));
+    avg_rl_force = mean(results.RL_Base.mean_force(valid));
+    avg_rl_imp = mean(results.RL_Base.improvement_roof(valid));
+    avg_rl_cl_force = mean(results.RL_CL.mean_force(valid));
+    avg_rl_cl_imp = mean(results.RL_CL.improvement_roof(valid));
+
+    % Draw efficiency lines from origin
+    max_force = max([avg_fuzzy_force, avg_rl_force, avg_rl_cl_force]) * 1.2;
+    max_imp = max([avg_fuzzy_imp, avg_rl_cl_imp]) * 1.2;
+
+    % Fuzzy efficiency line
+    fuzzy_slope = avg_fuzzy_imp / avg_fuzzy_force;
+    plot([0, max_force], [0, max_force * fuzzy_slope], ':', 'Color', [1 0.6 0], 'LineWidth', 1);
+    hold on;
+
+    % RL_CL efficiency line
+    rl_cl_slope = avg_rl_cl_imp / avg_rl_cl_force;
+    plot([0, max_force], [0, max_force * rl_cl_slope], ':', 'Color', [0.2 0.8 0.2], 'LineWidth', 1);
+
+    % Plot points
+    h1 = scatter(avg_fuzzy_force, avg_fuzzy_imp, ...
+            200, 'o', 'MarkerEdgeColor', [1 0.6 0], 'MarkerFaceColor', [1 0.6 0], 'LineWidth', 2);
+    h2 = scatter(avg_rl_force, avg_rl_imp, ...
+            200, 's', 'MarkerEdgeColor', [0.3 0.5 0.8], 'MarkerFaceColor', [0.3 0.5 0.8], 'LineWidth', 2);
+    h3 = scatter(avg_rl_cl_force, avg_rl_cl_imp, ...
+            200, 'd', 'MarkerEdgeColor', [0.2 0.8 0.2], 'MarkerFaceColor', [0.2 0.8 0.2], 'LineWidth', 2);
+    hold off;
+
+    % Annotate points with controller names
+    text(avg_fuzzy_force + 2, avg_fuzzy_imp + 2, 'Fuzzy', 'FontWeight', 'bold', 'Color', [1 0.6 0]);
+    text(avg_rl_force + 2, avg_rl_imp + 2, 'RL Base', 'FontWeight', 'bold', 'Color', [0.3 0.5 0.8]);
+    text(avg_rl_cl_force + 2, avg_rl_cl_imp + 2, 'RL CL', 'FontWeight', 'bold', 'Color', [0.2 0.8 0.2]);
+
+    % Add efficiency annotations
+    text(max_force * 0.7, max_force * fuzzy_slope * 0.7, ...
+        sprintf('%.2f %%/kN', fuzzy_slope), 'Color', [1 0.6 0], 'FontSize', 9);
+    text(max_force * 0.7, max_force * rl_cl_slope * 0.7 + 3, ...
+        sprintf('%.2f %%/kN', rl_cl_slope), 'Color', [0.2 0.8 0.2], 'FontSize', 9);
+
+    xlabel('Average Force (kN)');
+    ylabel('Average Improvement (%)');
+    title('Force Efficiency (Higher = Better)');
+    legend([h1, h2, h3], {'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
+    grid on;
+
+    % Plot 4: DCR Comparison (SWAPPED from plot 3)
+    subplot(2, 3, 4);
     bar(x - 1.5*width, results.Passive.DCR(valid), width, 'FaceColor', [0.7 0.7 0.7]);
     hold on;
     bar(x - 0.5*width, results.Fuzzy.DCR(valid), width, 'FaceColor', [1 0.6 0]);
@@ -978,45 +1039,28 @@ function create_comparison_plots(results, scenarios)
 
     set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
     xtickangle(45);
-    ylabel('DCR');
+    ylabel('DCR (Lower = Better)');
     title('Drift Concentration Ratio');
     legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
     grid on;
 
-    % Plot 4: Force Efficiency
-    subplot(2, 3, 4);
-    scatter(mean(results.Fuzzy.mean_force(valid)), mean(results.Fuzzy.improvement_roof(valid)), ...
-            200, 'o', 'MarkerEdgeColor', [1 0.6 0], 'MarkerFaceColor', [1 0.6 0], 'LineWidth', 2);
-    hold on;
-    scatter(mean(results.RL_Base.mean_force(valid)), mean(results.RL_Base.improvement_roof(valid)), ...
-            200, 's', 'MarkerEdgeColor', [0.3 0.5 0.8], 'MarkerFaceColor', [0.3 0.5 0.8], 'LineWidth', 2);
-    scatter(mean(results.RL_CL.mean_force(valid)), mean(results.RL_CL.improvement_roof(valid)), ...
-            200, 'd', 'MarkerEdgeColor', [0.2 0.8 0.2], 'MarkerFaceColor', [0.2 0.8 0.2], 'LineWidth', 2);
-    hold off;
-
-    xlabel('Average Force (kN)');
-    ylabel('Average Improvement (%)');
-    title('Force Efficiency');
-    legend({'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
-    grid on;
-
-    % Plot 5: Max Drift Comparison
+    % Plot 5: RMS Displacement (CHANGED from Max Drift)
     subplot(2, 3, 5);
-    bar(x - 1.5*width, results.Passive.max_drift(valid)*100, width, 'FaceColor', [0.7 0.7 0.7]);
+    bar(x - 1.5*width, results.Passive.rms_roof(valid)*100, width, 'FaceColor', [0.7 0.7 0.7]);
     hold on;
-    bar(x - 0.5*width, results.Fuzzy.max_drift(valid)*100, width, 'FaceColor', [1 0.6 0]);
-    bar(x + 0.5*width, results.RL_Base.max_drift(valid)*100, width, 'FaceColor', [0.3 0.5 0.8]);
-    bar(x + 1.5*width, results.RL_CL.max_drift(valid)*100, width, 'FaceColor', [0.2 0.8 0.2]);
+    bar(x - 0.5*width, results.Fuzzy.rms_roof(valid)*100, width, 'FaceColor', [1 0.6 0]);
+    bar(x + 0.5*width, results.RL_Base.rms_roof(valid)*100, width, 'FaceColor', [0.3 0.5 0.8]);
+    bar(x + 1.5*width, results.RL_CL.rms_roof(valid)*100, width, 'FaceColor', [0.2 0.8 0.2]);
     hold off;
 
     set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
     xtickangle(45);
-    ylabel('Max Drift (cm)');
-    title('Maximum Inter-Story Drift');
+    ylabel('RMS Displacement (cm)');
+    title('Root Mean Square Displacement');
     legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
     grid on;
 
-    % Plot 6: Robustness (Perturbation scenarios)
+    % Plot 6: Robustness (Perturbation scenarios) - ENHANCED
     subplot(2, 3, 6);
     % Find perturbation scenarios (Mod_10Noise, Mod_60Latency, etc.)
     stress_idx = find(valid & startsWith(scenario_labels, 'Mod_'));
@@ -1041,10 +1085,17 @@ function create_comparison_plots(results, scenarios)
             stress_labels_subset = scenario_labels(stress_idx);
             x_stress = 1:length(stress_idx);
 
-            plot(x_stress, fuzzy_deg(stress_idx), 'o-', 'Color', [1 0.6 0], 'LineWidth', 2, 'MarkerSize', 8);
+            % Highlight failure zone (degradation > 10%)
+            y_limits = ylim;
+            fill([0.5, length(stress_idx)+0.5, length(stress_idx)+0.5, 0.5], ...
+                 [10, 10, max(y_limits(2), 50), max(y_limits(2), 50)], ...
+                 [1 0.9 0.9], 'EdgeColor', 'none', 'FaceAlpha', 0.3);
             hold on;
-            plot(x_stress, rl_deg(stress_idx), 's-', 'Color', [0.3 0.5 0.8], 'LineWidth', 2, 'MarkerSize', 8);
-            plot(x_stress, rl_cl_deg(stress_idx), 'd-', 'Color', [0.2 0.8 0.2], 'LineWidth', 2, 'MarkerSize', 8);
+
+            % Plot with larger markers
+            plot(x_stress, fuzzy_deg(stress_idx), 'o-', 'Color', [1 0.6 0], 'LineWidth', 2, 'MarkerSize', 10, 'MarkerFaceColor', [1 0.6 0]);
+            plot(x_stress, rl_deg(stress_idx), 's-', 'Color', [0.3 0.5 0.8], 'LineWidth', 2, 'MarkerSize', 10, 'MarkerFaceColor', [0.3 0.5 0.8]);
+            plot(x_stress, rl_cl_deg(stress_idx), 'd-', 'Color', [0.2 0.8 0.2], 'LineWidth', 2, 'MarkerSize', 10, 'MarkerFaceColor', [0.2 0.8 0.2]);
             hold off;
 
             set(gca, 'XTick', 1:length(stress_idx), 'XTickLabel', stress_labels_subset);
@@ -1053,7 +1104,23 @@ function create_comparison_plots(results, scenarios)
             title('Robustness Under Perturbations');
             legend({'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
             grid on;
-            yline(0, 'k--');
+            yline(0, 'k--', 'LineWidth', 1.5);
+
+            % Add data labels at key points (find max degradation for RL Base and RL_CL)
+            [max_rl_deg, max_rl_idx] = max(rl_deg(stress_idx));
+            [min_rl_cl_deg, min_rl_cl_idx] = min(rl_cl_deg(stress_idx));
+
+            % Annotate RL Base failure (if significant degradation)
+            if max_rl_deg > 10
+                text(max_rl_idx, max_rl_deg + 3, sprintf('%.0f%%', max_rl_deg), ...
+                    'Color', [0.3 0.5 0.8], 'FontWeight', 'bold', 'HorizontalAlignment', 'center');
+            end
+
+            % Annotate RL_CL best case (if significant improvement or minimal degradation)
+            if abs(min_rl_cl_deg) > 2
+                text(min_rl_cl_idx, min_rl_cl_deg - 3, sprintf('%+.0f%%', min_rl_cl_deg), ...
+                    'Color', [0.2 0.8 0.2], 'FontWeight', 'bold', 'HorizontalAlignment', 'center');
+            end
         end
     end
 
