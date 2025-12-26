@@ -17,7 +17,11 @@ import os
 
 
 
-from fuzzy.fixed_fuzzy_controller import FixedFuzzyTMDController as fuzzy, FuzzyBatchRequest, FuzzyBatchResponse
+from fuzzy.fixed_fuzzy_controller import (
+    FixedFuzzyTMDController as fuzzy,
+    FuzzyBatchRequest, FuzzyBatchResponse,
+    FuzzySimulationRequest, FuzzySimulationResponse
+)
 
 
 from models.tmd_models import (
@@ -250,6 +254,59 @@ async def fuzzy_batch_predict(request: FuzzyBatchRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Fuzzy controller error: {str(e)}"
+        )
+
+
+@app.post("/fuzzy/simulate", response_model=FuzzySimulationResponse, tags=["Fuzzy Control"])
+async def simulate_fuzzy(request: FuzzySimulationRequest):
+    """
+    Run full closed-loop simulation with Fuzzy controller
+
+    This endpoint runs a complete structural simulation with the Fuzzy controller
+    using closed-loop feedback control (observe state → compute force → update state).
+
+    This is more accurate than batch prediction because the controller responds
+    to the actual trajectory under active control, not the passive trajectory.
+
+    Args:
+        request: Simulation parameters including earthquake data and time step
+
+    Returns:
+        Comprehensive simulation results including forces and performance metrics
+    """
+    if fuzzy_controller is None:
+        raise HTTPException(status_code=503, detail="Fuzzy controller not loaded")
+
+    try:
+        start_time = time.time()
+
+        # Run closed-loop simulation
+        metrics = fuzzy_controller.simulate_episode(
+            earthquake_data=np.array(request.earthquake_data),
+            dt=request.dt
+        )
+
+        elapsed = (time.time() - start_time) * 1000  # ms
+
+        return FuzzySimulationResponse(
+            forces_N=metrics['forces_N'],
+            forces_kN=metrics['forces_kN'],
+            count=len(metrics['forces_N']),
+            rms_roof_displacement=metrics['rms_roof_displacement'],
+            peak_roof_displacement=metrics['peak_roof_displacement'],
+            max_drift=metrics['max_drift'],
+            DCR=metrics['DCR'],
+            peak_force=metrics['peak_force'],
+            mean_force=metrics['mean_force'],
+            peak_force_kN=metrics['peak_force_kN'],
+            mean_force_kN=metrics['mean_force_kN'],
+            simulation_time_ms=elapsed
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Fuzzy simulation error: {str(e)}"
         )
 
 

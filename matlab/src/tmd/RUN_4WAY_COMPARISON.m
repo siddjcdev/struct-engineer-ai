@@ -295,11 +295,10 @@ function results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt
         results.Passive.time(scenario_idx) = toc;
         fprintf('Peak: %.2f cm (%.2f s)\n', passive_results.peak_roof*100, results.Passive.time(scenario_idx));
 
-        % ========== TEST 2: FUZZY LOGIC ==========
-        fprintf('  [2/4] Testing Fuzzy Logic... ');
+        % ========== TEST 2: FUZZY LOGIC (using /fuzzy/simulate endpoint) ==========
+        fprintf('  [2/4] Testing Fuzzy Logic (full simulation)... ');
         tic;
-        fuzzy_results = test_active_controller(x_passive, v_passive, M_passive, K_passive, C_passive,...
-            Fg, t, N, Nt, API_URL, 'fuzzy', perturbations, dt);
+        fuzzy_results = test_fuzzy_simulate(ag, dt, API_URL);
         results.Fuzzy.peak_roof(scenario_idx) = fuzzy_results.peak_roof;
         results.Fuzzy.max_drift(scenario_idx) = fuzzy_results.max_drift;
         results.Fuzzy.DCR(scenario_idx) = fuzzy_results.DCR;
@@ -774,6 +773,65 @@ function rl_cl_results = test_rl_cl_simulate(earthquake_data, dt, API_URL)
         rl_cl_results.DCR = 0;
         rl_cl_results.peak_force = 0;
         rl_cl_results.mean_force = 0;
+    end
+end
+
+function fuzzy_results = test_fuzzy_simulate(earthquake_data, dt, API_URL)
+    % Test Fuzzy Logic controller using full closed-loop simulation endpoint
+    %
+    % This uses the /fuzzy/simulate endpoint which runs a complete structural
+    % simulation with closed-loop feedback (observe → control → update).
+    % This is much more accurate than batch prediction.
+    %
+    % Args:
+    %   earthquake_data: Ground acceleration array (m/s²)
+    %   dt: Time step (seconds)
+    %   API_URL: Base API URL
+    %
+    % Returns:
+    %   fuzzy_results: Struct with all performance metrics
+
+    try
+        % Prepare simulation data
+        sim_data = struct(...
+            'earthquake_data', earthquake_data(:)', ...
+            'dt', dt ...
+        );
+
+        % Convert to JSON
+        json_data = jsonencode(sim_data);
+
+        % Set up HTTP options
+        options = weboptions(...
+            'MediaType', 'application/json', ...
+            'ContentType', 'json', ...
+            'Timeout', 300, ...
+            'HeaderFields', {'Content-Type', 'application/json'} ...
+        );
+
+        % Call API endpoint
+        endpoint = [API_URL 'fuzzy/simulate'];
+        response = webwrite(endpoint, json_data, options);
+
+        % Extract metrics from response
+        fuzzy_results.peak_roof = response.peak_roof_displacement;
+        fuzzy_results.rms_roof = response.rms_roof_displacement;
+        fuzzy_results.max_drift = response.max_drift;
+        fuzzy_results.DCR = response.DCR;
+        fuzzy_results.peak_force = response.peak_force_kN;
+        fuzzy_results.mean_force = response.mean_force_kN;
+
+    catch ME
+        warning('Fuzzy simulate API call failed: %s', ME.message);
+        fprintf('Error details: %s\n', ME.getReport());
+
+        % Return zeros on failure
+        fuzzy_results.peak_roof = 0;
+        fuzzy_results.rms_roof = 0;
+        fuzzy_results.max_drift = 0;
+        fuzzy_results.DCR = 0;
+        fuzzy_results.peak_force = 0;
+        fuzzy_results.mean_force = 0;
     end
 end
 

@@ -326,6 +326,177 @@ class FixedFuzzyTMDController:
         
     #     return forces
 
+    def simulate_episode(self, earthquake_data, dt=0.02):
+        """
+        Run closed-loop simulation with Fuzzy controller
+
+        Args:
+            earthquake_data: Ground acceleration time series (m/s²)
+            dt: Time step (seconds)
+
+        Returns:
+            Dictionary with metrics (peak_roof, max_drift, DCR, forces, etc.)
+        """
+        # Initialize 12-story building + TMD (matching RL environment)
+        n_floors = 12
+        n_dof = 13  # 12 floors + 1 TMD
+
+        # Building parameters (from RL environment)
+        floor_mass = 1.0e6  # kg
+        floor_stiffness = 5.0e8  # N/m
+        zeta = 0.05  # 5% damping
+
+        # TMD parameters
+        tmd_mass = 1.2e5  # kg (120 tons)
+        omega_1 = 3.14  # First mode frequency (rad/s)
+        mu = tmd_mass / floor_mass
+        omega_tmd = omega_1 / (1 + mu)  # Den Hartog tuning
+        zeta_tmd = np.sqrt(3 * mu / (8 * (1 + mu)))
+        tmd_k = tmd_mass * omega_tmd**2
+        tmd_c = 2 * zeta_tmd * np.sqrt(tmd_k * tmd_mass)
+
+        # Mass matrix
+        M = np.eye(n_dof) * floor_mass
+        M[12, 12] = tmd_mass
+
+        # Stiffness matrix (tridiagonal for building)
+        K = np.zeros((n_dof, n_dof))
+        for i in range(n_floors):
+            K[i, i] = 2 * floor_stiffness if i < n_floors - 1 else floor_stiffness
+            if i > 0:
+                K[i, i-1] = -floor_stiffness
+                K[i-1, i] = -floor_stiffness
+
+        # TMD coupling (roof is floor 11, TMD is index 12)
+        roof_idx = 11
+        K[roof_idx, roof_idx] += tmd_k
+        K[roof_idx, 12] = -tmd_k
+        K[12, roof_idx] = -tmd_k
+        K[12, 12] = tmd_k
+
+        # Damping matrix (Rayleigh damping)
+        omega_1 = np.sqrt(np.linalg.eigvalsh(np.linalg.solve(M, K))[0])
+        omega_2 = np.sqrt(np.linalg.eigvalsh(np.linalg.solve(M, K))[1])
+        A = np.array([[1/omega_1, omega_1], [1/omega_2, omega_2]])
+        coeffs = np.linalg.solve(A, [zeta, zeta])
+        alpha, beta = coeffs
+        C = alpha * M + beta * K
+
+        # TMD damping
+        C[roof_idx, roof_idx] += tmd_c
+        C[roof_idx, 12] = -tmd_c
+        C[12, roof_idx] = -tmd_c
+        C[12, 12] = tmd_c
+
+        # Newmark-beta parameters
+        beta_newmark = 0.25
+        gamma = 0.5
+
+        # Pre-compute effective stiffness matrix (for efficiency)
+        K_eff = K + gamma / (beta_newmark * dt) * C + 1 / (beta_newmark * dt**2) * M
+
+        # Initialize state vectors
+        displacement = np.zeros(n_dof)
+        velocity = np.zeros(n_dof)
+        acceleration = np.zeros(n_dof)
+
+        # Tracking for metrics
+        displacement_history = []
+        force_history = []
+        drift_history = []
+
+        # Simulation loop (closed-loop control!)
+        n_steps = len(earthquake_data)
+        forces = []
+
+        for step in range(n_steps):
+            # Get current ground acceleration
+            ag = earthquake_data[step]
+
+            # ============ CLOSED-LOOP CONTROL ============
+            # Observe CURRENT state
+            roof_disp = displacement[roof_idx]
+            roof_vel = velocity[roof_idx]
+            tmd_disp = displacement[12]
+            tmd_vel = velocity[12]
+
+            # Compute control force based on CURRENT state
+            control_force = self.compute(roof_disp, roof_vel, tmd_disp, tmd_vel)
+            forces.append(control_force)
+
+            # ============ PHYSICS SIMULATION ============
+            # Earthquake force
+            F_eq = -ag * M @ np.concatenate([np.ones(n_floors), [0]])
+
+            # Apply control force (Newton's 3rd law)
+            F_eq[roof_idx] -= control_force  # Roof gets reaction
+            F_eq[12] += control_force  # TMD gets actuator force
+
+            # Newmark-beta time integration
+            d_pred = displacement + dt * velocity + (0.5 - beta_newmark) * dt**2 * acceleration
+            v_pred = velocity + (1 - gamma) * dt * acceleration
+
+            F_eff = F_eq + M @ (1 / (beta_newmark * dt**2) * d_pred) + C @ (gamma / (beta_newmark * dt) * d_pred)
+
+            displacement_new = np.linalg.solve(K_eff, F_eff)
+            acceleration_new = (1 / (beta_newmark * dt**2)) * (displacement_new - d_pred)
+            velocity_new = v_pred + gamma * dt * acceleration_new
+
+            # Update state
+            displacement = displacement_new
+            velocity = velocity_new
+            acceleration = acceleration_new
+
+            # Track metrics
+            displacement_history.append(displacement[roof_idx])
+            force_history.append(control_force)
+
+            # Compute interstory drifts
+            drifts = np.zeros(n_floors)
+            drifts[0] = abs(displacement[0])
+            for i in range(1, n_floors):
+                drifts[i] = abs(displacement[i] - displacement[i-1])
+            drift_history.append(drifts)
+
+        # Compute metrics
+        displacements = np.array(displacement_history)
+        forces_array = np.array(force_history)
+
+        # 1. RMS of roof displacement
+        rms_roof = np.sqrt(np.mean(displacements**2))
+
+        # 2. Peak roof displacement
+        peak_roof = np.max(np.abs(displacements))
+
+        # 3. Max drift across all floors and time
+        drift_array = np.array(drift_history)
+        max_drift = np.max(drift_array)
+
+        # 4. DCR (Drift Concentration Ratio)
+        max_drift_per_floor = np.max(drift_array, axis=0)
+        if len(max_drift_per_floor) > 0 and np.mean(max_drift_per_floor) > 1e-10:
+            DCR = np.max(max_drift_per_floor) / np.mean(max_drift_per_floor)
+        else:
+            DCR = 0.0
+
+        # 5. Peak and mean force
+        peak_force = np.max(np.abs(forces_array))
+        mean_force = np.mean(np.abs(forces_array))
+
+        return {
+            'rms_roof_displacement': float(rms_roof),
+            'peak_roof_displacement': float(peak_roof),
+            'max_drift': float(max_drift),
+            'DCR': float(DCR),
+            'peak_force': float(peak_force),
+            'mean_force': float(mean_force),
+            'peak_force_kN': float(peak_force / 1000),
+            'mean_force_kN': float(mean_force / 1000),
+            'forces': forces,
+            'forces_N': forces,
+            'forces_kN': [f/1000 for f in forces]
+        }
+
     def get_stats(self):
         """Get controller statistics"""
         return {
@@ -355,6 +526,29 @@ class FuzzyBatchResponse(BaseModel):
     force_unit: str = "kN"
     num_predictions: int
     inference_time_ms: float
+
+
+class FuzzySimulationRequest(BaseModel):
+    """Request for Fuzzy simulation endpoint"""
+    earthquake_data: List[float] = Field(..., description="Ground acceleration time series (m/s²)")
+    dt: float = Field(0.02, description="Time step (seconds)")
+
+
+class FuzzySimulationResponse(BaseModel):
+    """Response from Fuzzy simulation endpoint"""
+    forces_N: List[float]
+    forces_kN: List[float]
+    count: int
+    rms_roof_displacement: float
+    peak_roof_displacement: float
+    max_drift: float
+    DCR: float
+    peak_force: float
+    mean_force: float
+    peak_force_kN: float
+    mean_force_kN: float
+    model: str = "Fuzzy Logic Controller"
+    simulation_time_ms: float
 
 
 
