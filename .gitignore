@@ -247,3 +247,5 @@ matlab/src/v1/comparison_passive_fuzzy*.png
 matlab/src/tmd/4way_comparison_comprehensive.json
 matlab/src/tmd/4way_comparison_TEST4.json
 matlab/src/tmd/RUN_4WAY_COMPARISON.asv
+# Fuzzy controller lookup table cache
+restapi/fuzzy/fuzzy_lookup_table_cache.pkl
