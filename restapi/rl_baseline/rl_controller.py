@@ -132,6 +132,66 @@ class RLTMDController:
         print(f"RL BATCH: Completed predictions for batch of size {n}")
         return forces_N
 
+    def simulate_episode(self, earthquake_data, dt=0.02):
+        """
+        Run full episode simulation with the controller
+
+        Args:
+            earthquake_data: Ground acceleration time series
+            dt: Time step (default 0.02s)
+
+        Returns:
+            dict with forces and all performance metrics
+        """
+        try:
+            # Import here to avoid circular dependency
+            import sys
+            import os
+            # Add path to rl_baseline module
+            rl_baseline_path = os.path.join(os.path.dirname(__file__), '..', '..', 'rl', 'rl_baseline')
+            if rl_baseline_path not in sys.path:
+                sys.path.insert(0, rl_baseline_path)
+
+            from tmd_environment import TMDBuildingEnv
+
+            # Create environment
+            env = TMDBuildingEnv(
+                earthquake_data=earthquake_data,
+                dt=dt,
+                max_force=self.max_force,
+                earthquake_name="API Simulation"
+            )
+
+            # Run episode
+            obs, info = env.reset()
+            done = False
+            forces = []
+
+            while not done:
+                # Get action from model
+                action, _ = self.model.predict(obs, deterministic=True)
+                forces.append(float(action[0]) * self.max_force)
+
+                # Step environment
+                obs, reward, terminated, truncated, info = env.step(action)
+                done = terminated or truncated
+
+            # Get metrics
+            metrics = env.get_episode_metrics()
+
+            # Add forces to metrics
+            metrics['forces'] = forces
+            metrics['forces_N'] = forces
+            metrics['forces_kN'] = [f/1000 for f in forces]
+
+            return metrics
+
+        except Exception as e:
+            print(f"Error in simulate_episode: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+
 
 # Request/Response models
 class RLSingleRequest(BaseModel):
@@ -170,6 +230,41 @@ class RLBatchResponse(BaseModel):
     force_unit: str = "kN"
     num_predictions: int
     inference_time_ms: float
+
+
+class RLSimulationRequest(BaseModel):
+    """Full simulation request"""
+    earthquake_data: List[float] = Field(..., description="Ground acceleration time series (m/s²)")
+    dt: float = Field(0.02, description="Time step (seconds)")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "earthquake_data": [0.5, 0.8, 1.2, 1.0, 0.6],
+                "dt": 0.02
+            }
+        }
+
+
+class RLSimulationResponse(BaseModel):
+    """Full simulation response with all metrics"""
+    forces_N: List[float] = Field(..., description="Control forces (Newtons)")
+    forces_kN: List[float] = Field(..., description="Control forces (kilonewtons)")
+    count: int = Field(..., description="Number of timesteps")
+
+    # Performance metrics
+    rms_roof_displacement: float = Field(..., description="RMS of roof displacement (m)")
+    peak_roof_displacement: float = Field(..., description="Peak roof displacement (m)")
+    max_drift: float = Field(..., description="Maximum interstory drift (m)")
+    DCR: float = Field(..., description="Drift Concentration Ratio")
+    peak_force: float = Field(..., description="Peak control force (N)")
+    mean_force: float = Field(..., description="Mean absolute control force (N)")
+    peak_force_kN: float = Field(..., description="Peak control force (kN)")
+    mean_force_kN: float = Field(..., description="Mean absolute control force (kN)")
+
+    # Metadata
+    model: str = "RL Baseline"
+    simulation_time_ms: float = Field(..., description="Total simulation time (ms)")
     
 # ================================================================
 # TESTING

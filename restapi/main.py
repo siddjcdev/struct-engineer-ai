@@ -33,7 +33,11 @@ from models.tmd_models import (
     ControlOutput
 )
 
-from rl_baseline.rl_controller import RLTMDController, RLSingleRequest, RLSingleResponse,RLBatchRequest, RLBatchResponse
+from rl_baseline.rl_controller import (
+    RLTMDController, RLSingleRequest, RLSingleResponse,
+    RLBatchRequest, RLBatchResponse,
+    RLSimulationRequest, RLSimulationResponse
+)
 
 from rl_cl.RLCLController import (
     RLCLBatchRequest, RLCLBatchResponse, RLCLController,
@@ -160,6 +164,7 @@ async def root():
             "RL-baseline": {
                 "rl_single": "POST /rl/predict",
                 "rl_batch": "POST /rl/predict-batch",
+                "rl_simulate": "POST /rl/simulate (with full metrics)",
                 "rl_status": "GET /rl/health",
             },
             "RL-CL": {
@@ -384,14 +389,14 @@ async def test_rl_controller():
         "tmd_disp": 0.16,
         "tmd_vel": 0.9
     }
-    
+
     force_N = rl_controller.predict(
         test_state["roof_disp"],
         test_state["roof_vel"],
         test_state["tmd_disp"],
         test_state["tmd_vel"]
     )
-    
+
     return {
         "status": "ok",
         "test_input": test_state,
@@ -400,6 +405,60 @@ async def test_rl_controller():
             "force_kN": force_N / 1000.0
         }
     }
+
+
+@app.post("/rl/simulate", response_model=RLSimulationResponse, tags=["Reinforcement Learning"])
+async def simulate_rl(request: RLSimulationRequest):
+    """
+    Run full earthquake simulation with RL Baseline controller
+
+    Returns all performance metrics including:
+    - RMS of roof displacement
+    - Peak roof displacement
+    - Maximum interstory drift
+    - DCR (Drift Concentration Ratio)
+    - Peak and mean control forces
+    """
+    if rl_controller is None:
+        raise HTTPException(status_code=503, detail="RL Model not loaded")
+
+    import numpy as np
+
+    # Validate inputs
+    if len(request.earthquake_data) == 0:
+        raise HTTPException(
+            status_code=422,
+            detail="Earthquake data cannot be empty"
+        )
+
+    start = time.time()
+
+    try:
+        # Run simulation
+        metrics = rl_controller.simulate_episode(
+            earthquake_data=np.array(request.earthquake_data),
+            dt=request.dt
+        )
+
+        elapsed = (time.time() - start) * 1000
+
+        return RLSimulationResponse(
+            forces_N=metrics['forces_N'],
+            forces_kN=metrics['forces_kN'],
+            count=len(metrics['forces_N']),
+            rms_roof_displacement=metrics['rms_roof_displacement'],
+            peak_roof_displacement=metrics['peak_roof_displacement'],
+            max_drift=metrics['max_drift'],
+            DCR=metrics['DCR'],
+            peak_force=metrics['peak_force'],
+            mean_force=metrics['mean_force'],
+            peak_force_kN=metrics['peak_force_kN'],
+            mean_force_kN=metrics['mean_force_kN'],
+            simulation_time_ms=elapsed
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Simulation error: {str(e)}")
 
 
 # ============================================================================
