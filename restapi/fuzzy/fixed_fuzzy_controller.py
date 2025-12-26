@@ -173,16 +173,44 @@ class FixedFuzzyTMDController:
         # ================================================================
         # PRE-COMPUTE LOOKUP TABLE FOR FAST INTERPOLATION
         # ================================================================
-        print("   FUZZY: Pre-computing lookup table for fast simulation...")
+        print("   FUZZY: Loading/building lookup table for fast simulation...")
         self._build_lookup_table()
-        print(f"   FUZZY: Lookup table built ({self.lut_disp_grid.shape[0]}x{self.lut_vel_grid.shape[0]} grid)")
+        print(f"   FUZZY: Lookup table ready ({self.lut_disp_grid.shape[0]}x{self.lut_vel_grid.shape[0]} grid)")
 
 
     def _build_lookup_table(self):
         """
         Pre-compute fuzzy control surface as a lookup table for fast interpolation.
         This provides 50-100x speedup compared to calling fuzzy inference 6001 times.
+
+        Uses caching to avoid recomputing the table on every startup (saves ~2 minutes).
         """
+        import pickle
+        from pathlib import Path
+
+        # Cache file path (in same directory as this file)
+        cache_dir = Path(__file__).parent
+        cache_file = cache_dir / 'fuzzy_lookup_table_cache.pkl'
+
+        # Try to load from cache
+        if cache_file.exists():
+            try:
+                print("      FUZZY: Found cached lookup table, loading...")
+                with open(cache_file, 'rb') as f:
+                    cache_data = pickle.load(f)
+
+                self.lut_disp_grid = cache_data['disp_grid']
+                self.lut_vel_grid = cache_data['vel_grid']
+                self.lut_force = cache_data['force']
+
+                print(f"      FUZZY: ✅ Loaded cached lookup table ({self.lut_force.shape[0]}x{self.lut_force.shape[1]} points)")
+                return
+            except Exception as e:
+                print(f"      FUZZY: ⚠️  Cache load failed ({e}), rebuilding...")
+
+        # Cache miss or load failed - compute from scratch
+        print("      FUZZY: No cache found, computing lookup table (this takes ~2 minutes)...")
+
         # Create grid (fine enough for accurate interpolation)
         n_disp = 101  # -0.5 to 0.5 m in 0.01 m steps
         n_vel = 201   # -2.0 to 2.0 m/s in 0.02 m/s steps
@@ -209,6 +237,20 @@ class FixedFuzzyTMDController:
                         # Fallback to PD control
                         Kp, Kd = 50000, 20000
                         self.lut_force[i, j] = -Kp * disp - Kd * vel
+
+        # Save to cache for next time
+        try:
+            print("      FUZZY: Saving lookup table to cache...")
+            cache_data = {
+                'disp_grid': self.lut_disp_grid,
+                'vel_grid': self.lut_vel_grid,
+                'force': self.lut_force
+            }
+            with open(cache_file, 'wb') as f:
+                pickle.dump(cache_data, f)
+            print(f"      FUZZY: ✅ Cached to {cache_file}")
+        except Exception as e:
+            print(f"      FUZZY: ⚠️  Failed to save cache ({e}), will recompute next time")
 
 
     def _interpolate_force(self, disp, vel):

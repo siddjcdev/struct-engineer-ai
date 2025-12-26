@@ -252,3 +252,7 @@ matlab/datasets/PEER_*.csv
 matlab/datasets/PEER_small_M4.5_PGA0.25g.csv
 matlab/datasets/PEER_*.csv
 matlab/src/tmd/*.png
+
+# Fuzzy controller lookup table cache
+restapi/fuzzy/fuzzy_lookup_table_cache.pkl
+
