@@ -130,7 +130,7 @@ def main():
     """Generate all earthquake scenarios"""
 
     # Output directory
-    output_dir = Path('/home/user/struct-engineer-ai/matlab/data/earthquakes/peer_synthetic')
+    output_dir = Path('/home/user/struct-engineer-ai/matlab/data/earthquakes')
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Earthquake scenarios with perturbations

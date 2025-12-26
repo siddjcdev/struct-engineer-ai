@@ -123,7 +123,7 @@ function run_quick_demo(API_URL, folder, N, m0, k0, zeta_target, dt, soft_story_
     % Single scenario in proper row format (1x4 cell array)
     % Note: Perturbations already baked into PEER datasets (10% noise, 60ms delay, 8% dropout)
     scenarios = {
-        'PEER_Small', 'Small (M4.5, 0.25g)', fullfile(folder, 'peer_synthetic', 'PEER_small_M4.5_PGA0.25g.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_Small', 'Small (M4.5, 0.25g)', fullfile(folder, 'PEER_small_M4.5_PGA0.25g.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0);
     };
 
     results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt, soft_story_idx, soft_story_factor, tmd_mass);
@@ -145,16 +145,16 @@ function run_all_scenarios(API_URL, folder, N, m0, k0, zeta_target, dt, soft_sto
     % CLEAN dataset (no perturbations - for custom testing in MATLAB)
     scenarios = {
         % === 4 Base Earthquakes (with baked-in perturbations) ===
-        'PEER_Small',    'Small (M4.5, 0.25g)',          fullfile(folder, 'peer_synthetic', 'PEER_small_M4.5_PGA0.25g.csv'),         struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'PEER_Moderate', 'Moderate (M5.7, 0.35g)',       fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g.csv'),     struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'PEER_High',     'High (M7.4, 0.75g)',           fullfile(folder, 'peer_synthetic', 'PEER_high_M7.4_PGA0.75g.csv'),         struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'PEER_Insane',   'Insane (M8.4, 0.9g)',          fullfile(folder, 'peer_synthetic', 'PEER_insane_M8.4_PGA0.9g.csv'),        struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_Small',    'Small (M4.5, 0.25g)',          fullfile(folder, 'PEER_small_M4.5_PGA0.25g.csv'),         struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_Moderate', 'Moderate (M5.7, 0.35g)',       fullfile(folder, 'PEER_moderate_M5.7_PGA0.35g.csv'),     struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_High',     'High (M7.4, 0.75g)',           fullfile(folder, 'PEER_high_M7.4_PGA0.75g.csv'),         struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_Insane',   'Insane (M8.4, 0.9g)',          fullfile(folder, 'PEER_insane_M8.4_PGA0.9g.csv'),        struct('noise', 0, 'latency', 0, 'dropout', 0);
 
         % === 4 Moderate Tests (CLEAN + different MATLAB perturbations) ===
-        'Mod_10Noise',   'Moderate + 10% Noise',         fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0.10, 'latency', 0, 'dropout', 0);
-        'Mod_60Latency', 'Moderate + 60ms Latency',      fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0, 'latency', 0.060, 'dropout', 0);
-        'Mod_8Dropout',  'Moderate + 8% Dropout',        fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0.08);
-        'Mod_Combined',  'Moderate + Combined Stress',   fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0.10, 'latency', 0.060, 'dropout', 0.08);
+        'Mod_10Noise',   'Moderate + 10% Noise',         fullfile(folder, 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0.10, 'latency', 0, 'dropout', 0);
+        'Mod_60Latency', 'Moderate + 60ms Latency',      fullfile(folder, 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0, 'latency', 0.060, 'dropout', 0);
+        'Mod_8Dropout',  'Moderate + 8% Dropout',        fullfile(folder, 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0.08);
+        'Mod_Combined',  'Moderate + Combined Stress',   fullfile(folder, 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0.10, 'latency', 0.060, 'dropout', 0.08);
     };
 
     results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt, soft_story_idx, soft_story_factor, tmd_mass);
@@ -188,16 +188,16 @@ function run_specific_scenario(API_URL, folder, N, m0, k0, zeta_target, dt, soft
 
     all_scenarios = {
         % === 4 Base Earthquakes (with baked-in perturbations) ===
-        'PEER_Small',    'Small (M4.5, 0.25g)',          fullfile(folder, 'peer_synthetic', 'PEER_small_M4.5_PGA0.25g.csv'),         struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'PEER_Moderate', 'Moderate (M5.7, 0.35g)',       fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g.csv'),     struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'PEER_High',     'High (M7.4, 0.75g)',           fullfile(folder, 'peer_synthetic', 'PEER_high_M7.4_PGA0.75g.csv'),         struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'PEER_Insane',   'Insane (M8.4, 0.9g)',          fullfile(folder, 'peer_synthetic', 'PEER_insane_M8.4_PGA0.9g.csv'),        struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_Small',    'Small (M4.5, 0.25g)',          fullfile(folder, 'PEER_small_M4.5_PGA0.25g.csv'),         struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_Moderate', 'Moderate (M5.7, 0.35g)',       fullfile(folder, 'PEER_moderate_M5.7_PGA0.35g.csv'),     struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_High',     'High (M7.4, 0.75g)',           fullfile(folder, 'PEER_high_M7.4_PGA0.75g.csv'),         struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_Insane',   'Insane (M8.4, 0.9g)',          fullfile(folder, 'PEER_insane_M8.4_PGA0.9g.csv'),        struct('noise', 0, 'latency', 0, 'dropout', 0);
 
         % === 4 Moderate Tests (CLEAN + different MATLAB perturbations) ===
-        'Mod_10Noise',   'Moderate + 10% Noise',         fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0.10, 'latency', 0, 'dropout', 0);
-        'Mod_60Latency', 'Moderate + 60ms Latency',      fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0, 'latency', 0.060, 'dropout', 0);
-        'Mod_8Dropout',  'Moderate + 8% Dropout',        fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0.08);
-        'Mod_Combined',  'Moderate + Combined Stress',   fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0.10, 'latency', 0.060, 'dropout', 0.08);
+        'Mod_10Noise',   'Moderate + 10% Noise',         fullfile(folder, 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0.10, 'latency', 0, 'dropout', 0);
+        'Mod_60Latency', 'Moderate + 60ms Latency',      fullfile(folder, 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0, 'latency', 0.060, 'dropout', 0);
+        'Mod_8Dropout',  'Moderate + 8% Dropout',        fullfile(folder, 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0.08);
+        'Mod_Combined',  'Moderate + Combined Stress',   fullfile(folder, 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0.10, 'latency', 0.060, 'dropout', 0.08);
     };
 
     if test_num < 1 || test_num > 8
@@ -987,7 +987,6 @@ end
 
 function exists = check_datasets_exist(folder)
     % Check if required PEER synthetic dataset files exist
-    peer_folder = fullfile(folder, 'peer_synthetic');
     required = {
         'PEER_small_M4.5_PGA0.25g.csv'
         'PEER_moderate_M5.7_PGA0.35g.csv'
@@ -998,19 +997,12 @@ function exists = check_datasets_exist(folder)
 
     exists = true;
 
-    % Check if peer_synthetic directory exists
-    if ~isfolder(peer_folder)
-        fprintf('❌ Missing directory: %s\n', peer_folder);
-        fprintf('   Run: python matlab/data/earthquakes/generate_peer_earthquakes.py\n');
-        exists = false;
-        return;
-    end
-
     % Check individual files
     for i = 1:length(required)
-        filepath = fullfile(peer_folder, required{i});
+        filepath = fullfile(folder, required{i});
         if ~isfile(filepath)
             fprintf('❌ Missing: %s\n', filepath);
+            fprintf('   Run: python matlab/data/earthquakes/generate_peer_earthquakes.py\n');
             exists = false;
         end
     end
