@@ -169,20 +169,46 @@ def main():
         },
     ]
 
-    # Clean baseline (for perturbation testing in MATLAB)
-    scenario_clean = {
-        'name': 'PEER_moderate_M5.7_PGA0.35g_CLEAN',
-        'description': 'Moderate Earthquake - CLEAN (no perturbations)',
-        'magnitude': 5.7,
-        'pga_g': 0.35,
-        'duration': 40.0,
-        'perturbations': {'noise_level': 0.0, 'delay_ms': 0, 'dropout_rate': 0.0},
-    }
+    # Moderate earthquake with different perturbation configurations (for comparison)
+    scenarios_moderate_variants = [
+        {
+            'name': 'PEER_moderate_10pct_noise',
+            'description': 'Moderate (M5.7) + 10% Noise ONLY',
+            'magnitude': 5.7,
+            'pga_g': 0.35,
+            'duration': 40.0,
+            'perturbations': {'noise_level': 0.10, 'delay_ms': 0, 'dropout_rate': 0.0},
+        },
+        {
+            'name': 'PEER_moderate_60ms_latency',
+            'description': 'Moderate (M5.7) + 60ms Latency ONLY',
+            'magnitude': 5.7,
+            'pga_g': 0.35,
+            'duration': 40.0,
+            'perturbations': {'noise_level': 0.0, 'delay_ms': 60, 'dropout_rate': 0.0},
+        },
+        {
+            'name': 'PEER_moderate_8pct_dropout',
+            'description': 'Moderate (M5.7) + 8% Dropout ONLY',
+            'magnitude': 5.7,
+            'pga_g': 0.35,
+            'duration': 40.0,
+            'perturbations': {'noise_level': 0.0, 'delay_ms': 0, 'dropout_rate': 0.08},
+        },
+        {
+            'name': 'PEER_moderate_combined_stress',
+            'description': 'Moderate (M5.7) + ALL Perturbations',
+            'magnitude': 5.7,
+            'pga_g': 0.35,
+            'duration': 40.0,
+            'perturbations': {'noise_level': 0.10, 'delay_ms': 60, 'dropout_rate': 0.08},
+        },
+    ]
 
     print("Generating PEER-based synthetic earthquake ground motions...\n")
 
     # Combine all scenarios
-    all_scenarios = scenarios_perturbed + [scenario_clean]
+    all_scenarios = scenarios_perturbed + scenarios_moderate_variants
 
     for scenario in all_scenarios:
         print(f"Generating: {scenario['name']}")
@@ -234,28 +260,36 @@ def main():
         f.write("- Applied perturbations (noise, dropout, delay)\n\n")
 
         f.write("## Scenarios\n\n")
-        f.write("### With Perturbations (10% noise, 60ms delay, 8% dropout)\n\n")
+        f.write("### Base Earthquakes (with combined perturbations)\n\n")
         for scenario in scenarios_perturbed:
             f.write(f"**{scenario['name']}**\n")
             f.write(f"- Description: {scenario['description']}\n")
             f.write(f"- Magnitude: {scenario['magnitude']}\n")
             f.write(f"- PGA: {scenario['pga_g']}g ({scenario['pga_g']*9.81:.2f} m/s²)\n")
-            f.write(f"- Duration: {scenario['duration']}s\n\n")
+            f.write(f"- Duration: {scenario['duration']}s\n")
+            f.write(f"- Perturbations: 10% noise, 60ms delay, 8% dropout\n\n")
 
-        f.write("### Clean Baseline (No Perturbations)\n\n")
-        f.write(f"**{scenario_clean['name']}**\n")
-        f.write(f"- Description: {scenario_clean['description']}\n")
-        f.write(f"- Magnitude: {scenario_clean['magnitude']}\n")
-        f.write(f"- PGA: {scenario_clean['pga_g']}g ({scenario_clean['pga_g']*9.81:.2f} m/s²)\n")
-        f.write(f"- Duration: {scenario_clean['duration']}s\n")
-        f.write(f"- Use this for testing different perturbation configurations in MATLAB\n\n")
+        f.write("### Moderate Earthquake Variants (different perturbations)\n\n")
+        for scenario in scenarios_moderate_variants:
+            f.write(f"**{scenario['name']}**\n")
+            f.write(f"- Description: {scenario['description']}\n")
+            perts = scenario['perturbations']
+            pert_desc = []
+            if perts['noise_level'] > 0:
+                pert_desc.append(f"{perts['noise_level']*100}% noise")
+            if perts['delay_ms'] > 0:
+                pert_desc.append(f"{perts['delay_ms']}ms delay")
+            if perts['dropout_rate'] > 0:
+                pert_desc.append(f"{perts['dropout_rate']*100}% dropout")
+            if not pert_desc:
+                pert_desc.append("CLEAN (no perturbations)")
+            f.write(f"- Perturbations: {', '.join(pert_desc)}\n\n")
 
-        f.write("## Perturbations\n\n")
-        f.write("Perturbed datasets include:\n")
-        f.write(f"- **Noise:** 10% of PGA (sensor noise + site effects)\n")
-        f.write(f"- **Delay:** 60ms (communication latency)\n")
-        f.write(f"- **Dropout:** 8% (packet loss with hold-last-value)\n\n")
-        f.write("Clean dataset has NO perturbations for custom testing.\n\n")
+        f.write("## Perturbation Types\n\n")
+        f.write("- **Noise:** Random Gaussian noise added to ground motion (% of PGA)\n")
+        f.write("- **Delay:** Simulated communication latency (milliseconds)\n")
+        f.write("- **Dropout:** Random data packet loss with hold-last-value (% of samples)\n\n")
+        f.write("Use moderate variants to isolate the effect of each perturbation type.\n\n")
 
         f.write("## CSV Format\n\n")
         f.write("Columns:\n")
