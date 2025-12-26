@@ -115,14 +115,15 @@ function RUN_4WAY_COMPARISON()
 end
 
 %% ============================================================
-%% QUICK DEMO (TEST3 ONLY)
+%% QUICK DEMO (SMALL EARTHQUAKE ONLY)
 %% ============================================================
 function run_quick_demo(API_URL, folder, N, m0, k0, zeta_target, dt, soft_story_idx, soft_story_factor, tmd_mass)
-    fprintf('\n═══ QUICK DEMO: TEST3 ONLY ═══\n\n');
+    fprintf('\n═══ QUICK DEMO: SMALL EARTHQUAKE ONLY ═══\n\n');
 
     % Single scenario in proper row format (1x4 cell array)
+    % Note: Perturbations already baked into PEER datasets (10% noise, 60ms delay, 8% dropout)
     scenarios = {
-        'TEST3', 'Small Earthquake (M4.5)', fullfile(folder, 'TEST3_small_earthquake_M4.5.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_Small', 'Small (M4.5, 0.25g)', fullfile(folder, 'peer_synthetic', 'PEER_small_M4.5_PGA0.25g.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0);
     };
 
     results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt, soft_story_idx, soft_story_factor, tmd_mass);
@@ -135,20 +136,20 @@ function run_quick_demo(API_URL, folder, N, m0, k0, zeta_target, dt, soft_story_
 end
 
 %% ============================================================
-%% RUN ALL 8 SCENARIOS
+%% RUN ALL 4 PEER SCENARIOS (SMALL → INSANE)
 %% ============================================================
 function run_all_scenarios(API_URL, folder, N, m0, k0, zeta_target, dt, soft_story_idx, soft_story_factor, tmd_mass)
-    fprintf('\n═══ COMPREHENSIVE 4-WAY COMPARISON (8 SCENARIOS) ═══\n\n');
+    fprintf('\n═══ COMPREHENSIVE 4-WAY COMPARISON (4 PEER SCENARIOS) ═══\n\n');
 
+    % All scenarios include realistic perturbations:
+    % - 10% noise (sensor noise + site effects)
+    % - 60ms delay (communication latency)
+    % - 8% dropout (packet loss with hold-last-value)
     scenarios = {
-        'TEST3', 'Small Earthquake (M4.5)', fullfile(folder, 'TEST3_small_earthquake_M4.5.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'TEST4', 'Large Earthquake (M6.9)', fullfile(folder, 'TEST4_large_earthquake_M6.9.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'TEST5', 'Moderate Earthquake (M6.7)', fullfile(folder, 'TEST5_earthquake_M6.7.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'TEST6a', 'Baseline Clean', fullfile(folder, 'TEST6a_baseline_clean.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'TEST6b', '10% Noise', fullfile(folder, 'TEST6b_with_10pct_noise.csv'), struct('noise', 0.10, 'latency', 0, 'dropout', 0);
-        'TEST6c', '50ms Latency', fullfile(folder, 'TEST6c_with_50ms_latency.csv'), struct('noise', 0, 'latency', 0.050, 'dropout', 0);
-        'TEST6d', '5% Dropout', fullfile(folder, 'TEST6d_with_5pct_dropout.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0.05);
-        'TEST6e', 'Combined Stress', fullfile(folder, 'TEST6e_combined_stress.csv'), struct('noise', 0.10, 'latency', 0.050, 'dropout', 0.05);
+        'PEER_Small',    'Small (M4.5, 0.25g)',    fullfile(folder, 'peer_synthetic', 'PEER_small_M4.5_PGA0.25g.csv'),       struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_Moderate', 'Moderate (M5.7, 0.35g)', fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g.csv'),   struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_High',     'High (M7.4, 0.75g)',     fullfile(folder, 'peer_synthetic', 'PEER_high_M7.4_PGA0.75g.csv'),       struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_Insane',   'Insane (M8.4, 0.9g)',    fullfile(folder, 'peer_synthetic', 'PEER_insane_M8.4_PGA0.9g.csv'),      struct('noise', 0, 'latency', 0, 'dropout', 0);
     };
 
     results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt, soft_story_idx, soft_story_factor, tmd_mass);
@@ -167,29 +168,22 @@ end
 %% ============================================================
 function run_specific_scenario(API_URL, folder, N, m0, k0, zeta_target, dt, soft_story_idx, soft_story_factor, tmd_mass)
     fprintf('\n═══ SELECT SCENARIO ═══\n\n');
-    fprintf('  1. TEST3: Small Earthquake (M4.5)\n');
-    fprintf('  2. TEST4: Large Earthquake (M6.9)\n');
-    fprintf('  3. TEST5: Moderate Earthquake (M6.7)\n');
-    fprintf('  4. TEST6a: Baseline Clean\n');
-    fprintf('  5. TEST6b: 10%% Noise\n');
-    fprintf('  6. TEST6c: 50ms Latency\n');
-    fprintf('  7. TEST6d: 5%% Dropout\n');
-    fprintf('  8. TEST6e: Combined Stress\n\n');
+    fprintf('  1. Small: M4.5, PGA 0.25g (20s)\n');
+    fprintf('  2. Moderate: M5.7, PGA 0.35g (40s)\n');
+    fprintf('  3. High: M7.4, PGA 0.75g (80s)\n');
+    fprintf('  4. Insane: M8.4, PGA 0.9g (120s)\n\n');
+    fprintf('  All scenarios include: 10%% noise, 60ms delay, 8%% dropout\n\n');
 
-    test_num = input('Enter test number (1-8): ');
+    test_num = input('Enter test number (1-4): ');
 
     all_scenarios = {
-        'TEST3', 'Small Earthquake (M4.5)', fullfile(folder, 'TEST3_small_earthquake_M4.5.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'TEST4', 'Large Earthquake (M6.9)', fullfile(folder, 'TEST4_large_earthquake_M6.9.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'TEST5', 'Moderate Earthquake (M6.7)', fullfile(folder, 'TEST5_earthquake_M6.7.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'TEST6a', 'Baseline Clean', fullfile(folder, 'TEST6a_baseline_clean.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'TEST6b', '10% Noise', fullfile(folder, 'TEST6b_with_10pct_noise.csv'), struct('noise', 0.10, 'latency', 0, 'dropout', 0);
-        'TEST6c', '50ms Latency', fullfile(folder, 'TEST6c_with_50ms_latency.csv'), struct('noise', 0, 'latency', 0.050, 'dropout', 0);
-        'TEST6d', '5% Dropout', fullfile(folder, 'TEST6d_with_5pct_dropout.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0.05);
-        'TEST6e', 'Combined Stress', fullfile(folder, 'TEST6e_combined_stress.csv'), struct('noise', 0.10, 'latency', 0.050, 'dropout', 0.05);
+        'PEER_Small',    'Small (M4.5, 0.25g)',    fullfile(folder, 'peer_synthetic', 'PEER_small_M4.5_PGA0.25g.csv'),       struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_Moderate', 'Moderate (M5.7, 0.35g)', fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g.csv'),   struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_High',     'High (M7.4, 0.75g)',     fullfile(folder, 'peer_synthetic', 'PEER_high_M7.4_PGA0.75g.csv'),       struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_Insane',   'Insane (M8.4, 0.9g)',    fullfile(folder, 'peer_synthetic', 'PEER_insane_M8.4_PGA0.9g.csv'),      struct('noise', 0, 'latency', 0, 'dropout', 0);
     };
 
-    if test_num < 1 || test_num > 8
+    if test_num < 1 || test_num > 4
         fprintf('Invalid choice.\n');
         return;
     end
@@ -975,24 +969,35 @@ function save_results(results, scenarios, API_URL, test_name)
 end
 
 function exists = check_datasets_exist(folder)
-    % Check if required dataset files exist
+    % Check if required PEER synthetic dataset files exist
+    peer_folder = fullfile(folder, 'peer_synthetic');
     required = {
-        'TEST3_small_earthquake_M4.5.csv'
-        'TEST4_large_earthquake_M6.9.csv'
-        'TEST5_earthquake_M6.7.csv'
-        'TEST6a_baseline_clean.csv'
-        'TEST6b_with_10pct_noise.csv'
-        'TEST6c_with_50ms_latency.csv'
-        'TEST6d_with_5pct_dropout.csv'
-        'TEST6e_combined_stress.csv'
+        'PEER_small_M4.5_PGA0.25g.csv'
+        'PEER_moderate_M5.7_PGA0.35g.csv'
+        'PEER_high_M7.4_PGA0.75g.csv'
+        'PEER_insane_M8.4_PGA0.9g.csv'
     };
-    
+
     exists = true;
+
+    % Check if peer_synthetic directory exists
+    if ~isfolder(peer_folder)
+        fprintf('❌ Missing directory: %s\n', peer_folder);
+        fprintf('   Run: python matlab/data/earthquakes/generate_peer_earthquakes.py\n');
+        exists = false;
+        return;
+    end
+
+    % Check individual files
     for i = 1:length(required)
-        filepath = fullfile(folder, required{i});
+        filepath = fullfile(peer_folder, required{i});
         if ~isfile(filepath)
-            fprintf('Missing: %s\n', filepath);
+            fprintf('❌ Missing: %s\n', filepath);
             exists = false;
         end
+    end
+
+    if exists
+        fprintf('✅ All PEER synthetic earthquake datasets found\n');
     end
 end
