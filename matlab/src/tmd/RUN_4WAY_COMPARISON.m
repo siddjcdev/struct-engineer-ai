@@ -980,15 +980,24 @@ function create_comparison_plots(results, scenarios)
             fill([idx-0.5, idx+0.5, idx+0.5, idx-0.5], [-250, -250, 0, 0], ...
                  [1 0.8 0.8], 'EdgeColor', 'none', 'FaceAlpha', 0.3);
 
-            % Add catastrophic failure warning
-            text(idx, -200, '⚠️ CATASTROPHIC FAILURE', ...
-                'FontSize', 11, 'FontWeight', 'bold', 'Color', 'r', ...
-                'HorizontalAlignment', 'center');
-            text(idx, -220, 'RL Baseline unsafe under latency!', ...
-                'FontSize', 9, 'FontWeight', 'bold', 'Color', [0.6 0 0], ...
-                'HorizontalAlignment', 'center');
+            % Add catastrophic failure warning (moved to the side with arrow)
+            annotation_x = idx + 2.5;  % Move to the right
+            annotation_y = -150;
 
-            text(idx, y_val - 20, sprintf('RL Base FAILURE: %.0f%%', y_val), ...
+            text(annotation_x, annotation_y, '⚠️ CATASTROPHIC FAILURE', ...
+                'FontSize', 11, 'FontWeight', 'bold', 'Color', 'r', ...
+                'HorizontalAlignment', 'left');
+            text(annotation_x, annotation_y - 25, 'RL Baseline unsafe under latency!', ...
+                'FontSize', 9, 'FontWeight', 'bold', 'Color', [0.6 0 0], ...
+                'HorizontalAlignment', 'left');
+
+            % Draw arrow pointing to the RL Base bar
+            annotation('arrow', ...
+                'X', [0.35, 0.30], ...  % Adjust based on subplot position
+                'Y', [0.35, 0.25], ...
+                'Color', 'r', 'LineWidth', 2, 'HeadStyle', 'cback1', 'HeadLength', 8, 'HeadWidth', 8);
+
+            text(idx, y_val - 20, sprintf('%.0f%%', y_val), ...
                 'HorizontalAlignment', 'center', 'Color', 'red', 'FontWeight', 'bold', 'FontSize', 9);
         end
     end
@@ -1117,9 +1126,9 @@ function create_comparison_plots(results, scenarios)
                  [1 0.9 0.9], 'EdgeColor', 'none', 'FaceAlpha', 0.2);
 
             % Plot with thicker lines (LineWidth 3)
-            plot(x_stress, fuzzy_deg(stress_idx), 'o-', 'Color', [1 0.6 0], 'LineWidth', 3, 'MarkerSize', 10, 'MarkerFaceColor', [1 0.6 0]);
-            plot(x_stress, rl_deg(stress_idx), 's-', 'Color', [0.3 0.5 0.8], 'LineWidth', 3, 'MarkerSize', 10, 'MarkerFaceColor', [0.3 0.5 0.8]);
-            plot(x_stress, rl_cl_deg(stress_idx), 'd-', 'Color', [0.2 0.8 0.2], 'LineWidth', 3, 'MarkerSize', 10, 'MarkerFaceColor', [0.2 0.8 0.2]);
+            h_fuzzy = plot(x_stress, fuzzy_deg(stress_idx), 'o-', 'Color', [1 0.6 0], 'LineWidth', 3, 'MarkerSize', 10, 'MarkerFaceColor', [1 0.6 0]);
+            h_rl = plot(x_stress, rl_deg(stress_idx), 's-', 'Color', [0.3 0.5 0.8], 'LineWidth', 3, 'MarkerSize', 10, 'MarkerFaceColor', [0.3 0.5 0.8]);
+            h_rl_cl = plot(x_stress, rl_cl_deg(stress_idx), 'd-', 'Color', [0.2 0.8 0.2], 'LineWidth', 3, 'MarkerSize', 10, 'MarkerFaceColor', [0.2 0.8 0.2]);
 
             % Add baseline
             yline(0, 'k--', 'LineWidth', 2);
@@ -1131,7 +1140,7 @@ function create_comparison_plots(results, scenarios)
             xtickangle(25);
             ylabel('Performance Degradation (%)');
             title('Robustness Under Perturbations');
-            legend({'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
+            legend([h_fuzzy, h_rl, h_rl_cl], {'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'northeast');
             grid on;
             ylim(y_limits);
 
