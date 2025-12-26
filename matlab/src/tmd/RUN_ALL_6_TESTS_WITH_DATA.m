@@ -67,7 +67,7 @@ function run_quick_demo_v7()
     fprintf('\n═══ V7 QUICK DEMO ═══\n\n');
     
     test_count = 0;
-    folder = 'datasets'; % relative folder name
+    folder = '../../datasets'; % relative folder name
 
     fprintf('[%d/6] Test 1: Stationary Wind + Earthquake\n', test_count+1);
     thefunc_dcr_floor_tuner_v7('el_centro', true, fullfile(folder,'TEST1_stationary_wind_12ms.csv'));
@@ -201,7 +201,7 @@ function run_specific_test_v7()
     fprintf('  6. Stress Tests\n\n');
     
     test_num = input('Enter test number (1-6): ');
-    folder = 'datasets'; % relative folder name
+    folder = '../../datasets'; % relative folder name
     
     switch test_num
         case 1
@@ -300,14 +300,13 @@ function exists = check_datasets_exist()
 
     % List of required dataset files
     required = {
-        'TEST1_stationary_wind_12ms.csv'
-        'TEST2_turbulent_wind_25ms.csv'
         'TEST3_small_earthquake_M4.5.csv'
         'TEST4_large_earthquake_M6.9.csv'
         'TEST5_earthquake_M6.7.csv'
         'TEST5_hurricane_wind_50ms.csv'
         'TEST6a_baseline_clean.csv'
         'TEST6b_with_10pct_noise.csv'
+        'TEST6c_with_50ms_latency.csv'
     };
 
     % Assume all exist until proven otherwise
@@ -316,7 +315,9 @@ function exists = check_datasets_exist()
     % Loop through each required file
     for i = 1:length(required)
         % Build full path to file inside the folder
-        filepath = fullfile(folder, required{i});
+        filepath = fullfile(['../../' folder], required{i});
+
+        fprintf('filepath : %s',filepath)
 
         % Check if file exists
         if ~isfile(filepath)

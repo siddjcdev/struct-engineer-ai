@@ -1,0 +1,480 @@
+TMD : Generated datasets
+
+
+>> RUN_ALL_6_TESTS_WITH_DATA
+
+╔════════════════════════════════════════════════════════╗
+║  RUNNING ALL 6 TEST CASES WITH V7 OPTIMIZER           ║
+╚════════════════════════════════════════════════════════╝
+
+V7 IMPROVEMENTS:
+  ✓ Multi-objective optimization (DCR + drift + roof)
+  ✓ Adaptive parameter grid based on response
+  ✓ Intelligent floor selection (modal + DCR)
+  ✓ Enhanced DCR calculation (75th percentile)
+  ✓ Smart guard constraints
+  ✓ Performance rating system
+
+✓ All dataset files found!
+
+Options:
+  1. Quick demo (one test from each case, ~6 min)
+  2. Run all comprehensive (~15 min)
+  3. Run specific test case
+  4. Compare v5/v6 vs v7 performance
+
+Enter choice (1-4): 1
+
+═══ V7 QUICK DEMO ═══
+
+[1/6] Test 1: Stationary Wind + Earthquake
+
+========================================
+TMD TUNER V7 WITH ENHANCED OPTIMIZATION
+========================================
+
+Loading earthquake data: el_centro
+
+Loading wind data: datasets/TEST1_stationary_wind_12ms.csv
+
+✓ Combined seismic + wind loading
+
+Running baseline simulation...
+
+===== BASELINE RESULTS =====
+Earthquake: Imperial Valley 1940 (El Centro)
+  PGA: 3.398 m/s² (0.35g)
+Wind: TEST1_stationary_wind_12ms
+  Mean speed: 12.4 m/s
+
+Building Response:
+  Max roof displacement: 2.119e-01 m
+  Max inter-story drift: 4.389e-02 m
+  DCR: 1.533
+  RMS displacement: 5.527e-02 m
+  RMS velocity: 9.018e-02 m/s
+  RMS acceleration: 6.598e-01 m/s²
+============================
+
+V7: Analyzing modal participation...
+  Selected floors: [3 4 8 11 12]
+V7: Creating adaptive parameter grid...
+  Mass ratios: 16 values (0.020 to 0.300)
+  Damping ratios: 17 values (0.030 to 0.400)
+V7: Setting adaptive guard constraints...
+  Peak roof guard: 3.814e-01 m (80% tolerance)
+  RMS guard: 1.387e-01 m (80% tolerance)
+  Drift guard: 7.900e-02 m (80% tolerance)
+
+Searching TMD configurations...
+  Testing floor 3...
+    *** New best: mu=0.300, zeta=0.400, score=-0.008 (DCR=1.538)
+  Testing floor 4...
+    *** New best: mu=0.300, zeta=0.400, score=-0.050 (DCR=1.434)
+  Testing floor 8...
+    *** New best: mu=0.300, zeta=0.400, score=-0.067 (DCR=1.427)
+  Testing floor 11...
+    *** New best: mu=0.300, zeta=0.140, score=-0.076 (DCR=1.545)
+  Testing floor 12...
+
+✓ Best TMD found: floor=11, mu=0.300, zeta=0.140
+
+===== V7 PERFORMANCE COMPARISON =====
+Earthquake: Imperial Valley 1940 (El Centro) (PGA: 0.35g)
+Wind: TEST1_stationary_wind_12ms (12.4 m/s)
+
+--- Primary Metrics ---
+DCR:       1.533 → 1.545 (-0.8%)
+Max drift: 4.389e-02 → 4.393e-02 m (-0.1%)
+Max roof:  2.119e-01 → 1.229e-01 m (+42.0%)
+
+--- RMS Metrics ---
+RMS disp:  5.527e-02 → 2.763e-02 m (+50.0%)
+RMS vel:   9.018e-02 → 6.773e-02 m/s (+24.9%)
+RMS acc:   6.598e-01 → 6.555e-01 m/s² (+0.7%)
+
+--- V7 Performance Assessment ---
+Rating: GOOD
+Recommendation: TMD provides meaningful improvement. Cost-benefit analysis recommended.
+=====================================
+
+===== SAVING RESULTS =====
+✗ JSON export failed: Invalid file identifier. Use fopen to generate a valid file identifier.
+✓ MATLAB data saved: building_sim_v7_latest.mat
+==============================
+✓ Complete
+
+[2/6] Test 2: Turbulent Wind + Earthquake
+
+========================================
+TMD TUNER V7 WITH ENHANCED OPTIMIZATION
+========================================
+
+Loading earthquake data: el_centro
+
+Loading wind data: datasets/TEST2_turbulent_wind_25ms.csv
+
+✓ Combined seismic + wind loading
+
+Running baseline simulation...
+
+===== BASELINE RESULTS =====
+Earthquake: Imperial Valley 1940 (El Centro)
+  PGA: 3.395 m/s² (0.35g)
+Wind: TEST2_turbulent_wind_25ms
+  Mean speed: 25.1 m/s
+
+Building Response:
+  Max roof displacement: 4.702e-01 m
+  Max inter-story drift: 7.712e-02 m
+  DCR: 1.262
+  RMS displacement: 1.194e-01 m
+  RMS velocity: 1.113e-01 m/s
+  RMS acceleration: 6.320e-01 m/s²
+============================
+
+V7: Analyzing modal participation...
+  Selected floors: [2 3 4 8 12]
+V7: Creating adaptive parameter grid...
+  Mass ratios: 21 values (0.010 to 0.250)
+  Damping ratios: 14 values (0.020 to 0.250)
+V7: Setting adaptive guard constraints...
+  Peak roof guard: 6.113e-01 m (30% tolerance)
+  RMS guard: 2.157e-01 m (30% tolerance)
+  Drift guard: 1.003e-01 m (30% tolerance)
+
+Searching TMD configurations...
+  Testing floor 2...
+    *** New best: mu=0.250, zeta=0.250, score=-0.025 (DCR=1.220)
+  Testing floor 3...
+    *** New best: mu=0.250, zeta=0.250, score=-0.039 (DCR=1.204)
+  Testing floor 4...
+    *** New best: mu=0.200, zeta=0.250, score=-0.056 (DCR=1.176)
+  Testing floor 8...
+  Testing floor 12...
+
+✓ Best TMD found: floor=4, mu=0.200, zeta=0.250
+
+===== V7 PERFORMANCE COMPARISON =====
+Earthquake: Imperial Valley 1940 (El Centro) (PGA: 0.35g)
+Wind: TEST2_turbulent_wind_25ms (25.1 m/s)
+
+--- Primary Metrics ---
+DCR:       1.262 → 1.176 (+6.8%)
+Max drift: 7.712e-02 → 7.190e-02 m (+6.8%)
+Max roof:  4.702e-01 → 4.663e-01 m (+0.8%)
+
+--- RMS Metrics ---
+RMS disp:  1.194e-01 → 1.214e-01 m (-1.7%)
+RMS vel:   1.113e-01 → 1.132e-01 m/s (-1.7%)
+RMS acc:   6.320e-01 → 6.267e-01 m/s² (+0.8%)
+
+--- V7 Performance Assessment ---
+Rating: MODERATE
+Recommendation: TMD shows limited benefit. Consider alternatives or multiple TMDs.
+=====================================
+
+===== SAVING RESULTS =====
+✗ JSON export failed: Invalid file identifier. Use fopen to generate a valid file identifier.
+✓ MATLAB data saved: building_sim_v7_latest.mat
+==============================
+✓ Complete
+
+[3/6] Test 3: Small Earthquake (M 4.5)
+
+========================================
+TMD TUNER V7 WITH ENHANCED OPTIMIZATION
+========================================
+
+Loading earthquake data: datasets/TEST3_small_earthquake_M4.5.csv
+
+✓ Seismic loading only
+
+Running baseline simulation...
+
+===== BASELINE RESULTS =====
+Earthquake: TEST3_small_earthquake_M4.5
+  PGA: 1.000 m/s² (0.10g)
+
+Building Response:
+  Max roof displacement: 4.399e-02 m
+  Max inter-story drift: 2.109e-02 m
+  DCR: 1.224
+  RMS displacement: 7.038e-03 m
+  RMS velocity: 2.974e-02 m/s
+  RMS acceleration: 1.892e-01 m/s²
+============================
+
+V7: Analyzing modal participation...
+  Selected floors: [4 5 6 8 12]
+V7: Creating adaptive parameter grid...
+  Mass ratios: 13 values (0.005 to 0.100)
+  Damping ratios: 16 values (0.010 to 0.200)
+V7: Setting adaptive guard constraints...
+  Peak roof guard: 5.719e-02 m (30% tolerance)
+  RMS guard: 1.200e-02 m (30% tolerance)
+  Drift guard: 2.741e-02 m (30% tolerance)
+
+Searching TMD configurations...
+  Testing floor 4...
+    *** New best: mu=0.005, zeta=0.200, score=0.000 (DCR=1.225)
+  Testing floor 5...
+    *** New best: mu=0.100, zeta=0.200, score=-0.007 (DCR=1.219)
+  Testing floor 6...
+    *** New best: mu=0.100, zeta=0.010, score=-0.019 (DCR=1.212)
+  Testing floor 8...
+    *** New best: mu=0.100, zeta=0.040, score=-0.210 (DCR=1.094)
+  Testing floor 12...
+
+✓ Best TMD found: floor=8, mu=0.100, zeta=0.040
+
+===== V7 PERFORMANCE COMPARISON =====
+Earthquake: TEST3_small_earthquake_M4.5 (PGA: 0.10g)
+
+--- Primary Metrics ---
+DCR:       1.224 → 1.094 (+10.7%)
+Max drift: 2.109e-02 → 1.340e-02 m (+36.5%)
+Max roof:  4.399e-02 → 3.367e-02 m (+23.5%)
+
+--- RMS Metrics ---
+RMS disp:  7.038e-03 → 5.853e-03 m (+16.8%)
+RMS vel:   2.974e-02 → 1.883e-02 m/s (+36.7%)
+RMS acc:   1.892e-01 → 1.258e-01 m/s² (+33.5%)
+
+--- V7 Performance Assessment ---
+Rating: EXCELLENT
+Recommendation: TMD is highly effective. Recommended for implementation.
+=====================================
+
+===== SAVING RESULTS =====
+✗ JSON export failed: Invalid file identifier. Use fopen to generate a valid file identifier.
+✓ MATLAB data saved: building_sim_v7_latest.mat
+==============================
+✓ Complete
+
+[4/6] Test 4: Large Earthquake (M 6.9)
+
+========================================
+TMD TUNER V7 WITH ENHANCED OPTIMIZATION
+========================================
+
+Loading earthquake data: datasets/TEST4_large_earthquake_M6.9.csv
+
+✓ Seismic loading only
+
+Running baseline simulation...
+
+===== BASELINE RESULTS =====
+Earthquake: TEST4_large_earthquake_M6.9
+  PGA: 3.924 m/s² (0.40g)
+
+Building Response:
+  Max roof displacement: 2.632e-01 m
+  Max inter-story drift: 1.065e-01 m
+  DCR: 1.781
+  RMS displacement: 5.701e-02 m
+  RMS velocity: 1.261e-01 m/s
+  RMS acceleration: 6.326e-01 m/s²
+============================
+
+V7: Analyzing modal participation...
+  Selected floors: [2 3 7 8 12]
+V7: Creating adaptive parameter grid...
+  Mass ratios: 16 values (0.020 to 0.300)
+  Damping ratios: 17 values (0.030 to 0.400)
+V7: Setting adaptive guard constraints...
+  Peak roof guard: 4.738e-01 m (80% tolerance)
+  RMS guard: 1.390e-01 m (80% tolerance)
+  Drift guard: 1.917e-01 m (80% tolerance)
+
+Searching TMD configurations...
+  Testing floor 2...
+    *** New best: mu=0.300, zeta=0.400, score=-0.020 (DCR=1.777)
+  Testing floor 3...
+    *** New best: mu=0.300, zeta=0.030, score=-0.083 (DCR=1.713)
+  Testing floor 7...
+  Testing floor 8...
+  Testing floor 12...
+
+✓ Best TMD found: floor=3, mu=0.300, zeta=0.030
+
+===== V7 PERFORMANCE COMPARISON =====
+Earthquake: TEST4_large_earthquake_M6.9 (PGA: 0.40g)
+
+--- Primary Metrics ---
+DCR:       1.781 → 1.713 (+3.8%)
+Max drift: 1.065e-01 → 8.530e-02 m (+19.9%)
+Max roof:  2.632e-01 → 2.582e-01 m (+1.9%)
+
+--- RMS Metrics ---
+RMS disp:  5.701e-02 → 5.501e-02 m (+3.5%)
+RMS vel:   1.261e-01 → 1.138e-01 m/s (+9.7%)
+RMS acc:   6.326e-01 → 5.739e-01 m/s² (+9.3%)
+
+--- V7 Performance Assessment ---
+Rating: GOOD
+Recommendation: TMD provides meaningful improvement. Cost-benefit analysis recommended.
+=====================================
+
+===== SAVING RESULTS =====
+✗ JSON export failed: Invalid file identifier. Use fopen to generate a valid file identifier.
+✓ MATLAB data saved: building_sim_v7_latest.mat
+==============================
+✓ Complete
+
+[5/6] Test 5: Extreme Combined Loading
+
+========================================
+TMD TUNER V7 WITH ENHANCED OPTIMIZATION
+========================================
+
+Loading earthquake data: datasets/TEST5_earthquake_M6.7.csv
+
+Loading wind data: datasets/TEST5_hurricane_wind_50ms.csv
+
+✓ Combined seismic + wind loading
+
+Running baseline simulation...
+
+===== BASELINE RESULTS =====
+Earthquake: TEST5_earthquake_M6.7
+  PGA: 3.924 m/s² (0.40g)
+Wind: TEST5_hurricane_wind_50ms
+  Mean speed: 36.3 m/s
+
+Building Response:
+  Max roof displacement: 1.914e+00 m
+  Max inter-story drift: 2.350e-01 m
+  DCR: 1.162
+  RMS displacement: 3.184e-01 m
+  RMS velocity: 2.241e-01 m/s
+  RMS acceleration: 6.819e-01 m/s²
+============================
+
+V7: Analyzing modal participation...
+  Selected floors: [2 3 4 8 12]
+V7: Creating adaptive parameter grid...
+  Mass ratios: 16 values (0.020 to 0.300)
+  Damping ratios: 17 values (0.030 to 0.400)
+V7: Setting adaptive guard constraints...
+  Peak roof guard: 2.488e+00 m (30% tolerance)
+  RMS guard: 5.736e-01 m (30% tolerance)
+  Drift guard: 3.056e-01 m (30% tolerance)
+
+Searching TMD configurations...
+  Testing floor 2...
+    *** New best: mu=0.020, zeta=0.030, score=-0.004 (DCR=1.155)
+  Testing floor 3...
+  Testing floor 4...
+    *** New best: mu=0.020, zeta=0.040, score=-0.030 (DCR=1.124)
+  Testing floor 8...
+  Testing floor 12...
+    *** New best: mu=0.300, zeta=0.400, score=-0.038 (DCR=1.133)
+
+✓ Best TMD found: floor=12, mu=0.300, zeta=0.400
+
+===== V7 PERFORMANCE COMPARISON =====
+Earthquake: TEST5_earthquake_M6.7 (PGA: 0.40g)
+Wind: TEST5_hurricane_wind_50ms (36.3 m/s)
+
+--- Primary Metrics ---
+DCR:       1.162 → 1.133 (+2.4%)
+Max drift: 2.350e-01 → 2.212e-01 m (+5.9%)
+Max roof:  1.914e+00 → 1.839e+00 m (+3.9%)
+
+--- RMS Metrics ---
+RMS disp:  3.184e-01 → 3.184e-01 m (-0.0%)
+RMS vel:   2.241e-01 → 2.132e-01 m/s (+4.9%)
+RMS acc:   6.819e-01 → 6.582e-01 m/s² (+3.5%)
+
+--- V7 Performance Assessment ---
+Rating: MODERATE
+Recommendation: TMD shows limited benefit. Consider alternatives or multiple TMDs.
+=====================================
+
+===== SAVING RESULTS =====
+✗ JSON export failed: Invalid file identifier. Use fopen to generate a valid file identifier.
+✓ MATLAB data saved: building_sim_v7_latest.mat
+==============================
+✓ Complete
+
+Caught unexpected exception of unknown type.
+[6/6] Test 6: Stress Test (10% noise)
+
+========================================
+TMD TUNER V7 WITH ENHANCED OPTIMIZATION
+========================================
+
+Loading earthquake data: datasets/TEST6b_with_10pct_noise.csv
+
+✓ Seismic loading only
+
+Running baseline simulation...
+
+===== BASELINE RESULTS =====
+Earthquake: TEST6b_with_10pct_noise
+  PGA: 3.880 m/s² (0.40g)
+
+Building Response:
+  Max roof displacement: 2.631e-01 m
+  Max inter-story drift: 1.037e-01 m
+  DCR: 1.742
+  RMS displacement: 5.540e-02 m
+  RMS velocity: 1.246e-01 m/s
+  RMS acceleration: 6.317e-01 m/s²
+============================
+
+V7: Analyzing modal participation...
+  Selected floors: [2 3 7 8 12]
+V7: Creating adaptive parameter grid...
+  Mass ratios: 16 values (0.020 to 0.300)
+  Damping ratios: 17 values (0.030 to 0.400)
+V7: Setting adaptive guard constraints...
+  Peak roof guard: 4.735e-01 m (80% tolerance)
+  RMS guard: 1.348e-01 m (80% tolerance)
+  Drift guard: 1.866e-01 m (80% tolerance)
+
+Searching TMD configurations...
+  Testing floor 2...
+    *** New best: mu=0.300, zeta=0.400, score=-0.019 (DCR=1.737)
+  Testing floor 3...
+    *** New best: mu=0.300, zeta=0.030, score=-0.062 (DCR=1.724)
+  Testing floor 7...
+  Testing floor 8...
+  Testing floor 12...
+
+✓ Best TMD found: floor=3, mu=0.300, zeta=0.030
+
+===== V7 PERFORMANCE COMPARISON =====
+Earthquake: TEST6b_with_10pct_noise (PGA: 0.40g)
+
+--- Primary Metrics ---
+DCR:       1.742 → 1.724 (+1.1%)
+Max drift: 1.037e-01 → 8.523e-02 m (+17.8%)
+Max roof:  2.631e-01 → 2.594e-01 m (+1.4%)
+
+--- RMS Metrics ---
+RMS disp:  5.540e-02 → 5.287e-02 m (+4.6%)
+RMS vel:   1.246e-01 → 1.111e-01 m/s (+10.8%)
+RMS acc:   6.317e-01 → 5.712e-01 m/s² (+9.6%)
+
+--- V7 Performance Assessment ---
+Rating: MODERATE
+Recommendation: TMD shows limited benefit. Consider alternatives or multiple TMDs.
+=====================================
+
+===== SAVING RESULTS =====
+✗ JSON export failed: Invalid file identifier. Use fopen to generate a valid file identifier.
+✓ MATLAB data saved: building_sim_v7_latest.mat
+==============================
+✓ Complete
+
+
+═══ V7 QUICK DEMO COMPLETE ═══
+6 simulations completed
+
+
+✓ All simulations complete!
+Check JSON files: tmd_v7_simulation_*.json
+
+>> 

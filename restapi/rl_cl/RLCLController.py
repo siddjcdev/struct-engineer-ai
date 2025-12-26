@@ -84,11 +84,11 @@ class RLCLController:
             import sys
             import os
             # Add path to rl_cl module
-            rl_cl_path = os.path.join(os.path.dirname(__file__), '..', '..', 'rl', 'rl_cl')
-            if rl_cl_path not in sys.path:
-                sys.path.insert(0, rl_cl_path)
+            # rl_cl_path = os.path.join(os.path.dirname(__file__), '..', '..', 'rl', 'rl_cl')
+            # if rl_cl_path not in sys.path:
+            #     sys.path.insert(0, rl_cl_path)
 
-            from tmd_environment import ImprovedTMDBuildingEnv
+            from .rl_cl_tmd_environment import ImprovedTMDBuildingEnv
 
             # Create environment
             env = ImprovedTMDBuildingEnv(
