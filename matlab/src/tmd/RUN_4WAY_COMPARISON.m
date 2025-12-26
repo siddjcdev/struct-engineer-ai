@@ -41,8 +41,17 @@ function RUN_4WAY_COMPARISON()
     fprintf('╚════════════════════════════════════════════════════════╝\n\n');
 
     % ========== UPDATE THIS WITH YOUR API URL ==========
-    API_URL = 'https://perfect-rl-api-887344515766.us-east4.run.app/';
+    % IMPORTANT: Must end with trailing slash '/'
+    % Examples:
+    API_URL = 'http://localhost:8080/';
+    %API_URL = 'https://perfect-rl-api-887344515766.us-east4.run.app/';
     % ===================================================
+
+    % Auto-fix: Add trailing slash if missing
+    if ~endsWith(API_URL, '/')
+        API_URL = [API_URL '/'];
+        fprintf('ℹ️  Added trailing slash to API_URL: %s\n', API_URL);
+    end
 
     % Building parameters (matching your v7/v8 setup)
     N = 12;                      % 12 floors
@@ -141,8 +150,8 @@ end
 function run_all_scenarios(API_URL, folder, N, m0, k0, zeta_target, dt, soft_story_idx, soft_story_factor, tmd_mass)
     fprintf('\n═══ COMPREHENSIVE 4-WAY COMPARISON (8 SCENARIOS) ═══\n\n');
 
-    % Base datasets (perturbations baked in: 10% noise, 60ms delay, 8% dropout)
-    % CLEAN dataset (no perturbations - for custom testing in MATLAB)
+   % Perturbations are BAKED INTO the CSV files (not applied in MATLAB)
+    % This is required because /simulate endpoints run in Python and don't receive MATLAB perturbation parameters
     scenarios = {
         % === 4 Base Earthquakes (with baked-in perturbations) ===
         'PEER_Small',    'Small (M4.5, 0.25g)',          fullfile(folder, 'PEER_small_M4.5_PGA0.25g.csv'),         struct('noise', 0, 'latency', 0, 'dropout', 0);
@@ -150,11 +159,11 @@ function run_all_scenarios(API_URL, folder, N, m0, k0, zeta_target, dt, soft_sto
         'PEER_High',     'High (M7.4, 0.75g)',           fullfile(folder, 'PEER_high_M7.4_PGA0.75g.csv'),         struct('noise', 0, 'latency', 0, 'dropout', 0);
         'PEER_Insane',   'Insane (M8.4, 0.9g)',          fullfile(folder, 'PEER_insane_M8.4_PGA0.9g.csv'),        struct('noise', 0, 'latency', 0, 'dropout', 0);
 
-        % === 4 Moderate Tests (CLEAN + different MATLAB perturbations) ===
-        'Mod_10Noise',   'Moderate + 10% Noise',         fullfile(folder, 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0.10, 'latency', 0, 'dropout', 0);
-        'Mod_60Latency', 'Moderate + 60ms Latency',      fullfile(folder, 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0, 'latency', 0.060, 'dropout', 0);
-        'Mod_8Dropout',  'Moderate + 8% Dropout',        fullfile(folder, 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0.08);
-        'Mod_Combined',  'Moderate + Combined Stress',   fullfile(folder, 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0.10, 'latency', 0.060, 'dropout', 0.08);
+        % === 4 Moderate Tests (different perturbations baked into CSV files) ===
+        'Mod_10Noise',   'Moderate + 10% Noise',         fullfile(folder, 'PEER_moderate_10pct_noise.csv'),        struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'Mod_60Latency', 'Moderate + 60ms Latency',      fullfile(folder, 'PEER_moderate_60ms_latency.csv'),       struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'Mod_8Dropout',  'Moderate + 8% Dropout',        fullfile(folder, 'PEER_moderate_8pct_dropout.csv'),       struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'Mod_Combined',  'Moderate + Combined Stress',   fullfile(folder, 'PEER_moderate_combined_stress.csv'),    struct('noise', 0, 'latency', 0, 'dropout', 0);
     };
 
     results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt, soft_story_idx, soft_story_factor, tmd_mass);
@@ -193,11 +202,11 @@ function run_specific_scenario(API_URL, folder, N, m0, k0, zeta_target, dt, soft
         'PEER_High',     'High (M7.4, 0.75g)',           fullfile(folder, 'PEER_high_M7.4_PGA0.75g.csv'),         struct('noise', 0, 'latency', 0, 'dropout', 0);
         'PEER_Insane',   'Insane (M8.4, 0.9g)',          fullfile(folder, 'PEER_insane_M8.4_PGA0.9g.csv'),        struct('noise', 0, 'latency', 0, 'dropout', 0);
 
-        % === 4 Moderate Tests (CLEAN + different MATLAB perturbations) ===
-        'Mod_10Noise',   'Moderate + 10% Noise',         fullfile(folder, 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0.10, 'latency', 0, 'dropout', 0);
-        'Mod_60Latency', 'Moderate + 60ms Latency',      fullfile(folder, 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0, 'latency', 0.060, 'dropout', 0);
-        'Mod_8Dropout',  'Moderate + 8% Dropout',        fullfile(folder, 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0.08);
-        'Mod_Combined',  'Moderate + Combined Stress',   fullfile(folder, 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0.10, 'latency', 0.060, 'dropout', 0.08);
+         % === 4 Moderate Tests (different perturbations baked into CSV files) ===
+        'Mod_10Noise',   'Moderate + 10% Noise',         fullfile(folder, 'PEER_moderate_10pct_noise.csv'),        struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'Mod_60Latency', 'Moderate + 60ms Latency',      fullfile(folder, 'PEER_moderate_60ms_latency.csv'),       struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'Mod_8Dropout',  'Moderate + 8% Dropout',        fullfile(folder, 'PEER_moderate_8pct_dropout.csv'),       struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'Mod_Combined',  'Moderate + Combined Stress',   fullfile(folder, 'PEER_moderate_combined_stress.csv'),    struct('noise', 0, 'latency', 0, 'dropout', 0);
     };
 
     if test_num < 1 || test_num > 8
@@ -992,7 +1001,10 @@ function exists = check_datasets_exist(folder)
         'PEER_moderate_M5.7_PGA0.35g.csv'
         'PEER_high_M7.4_PGA0.75g.csv'
         'PEER_insane_M8.4_PGA0.9g.csv'
-        'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'
+        'PEER_moderate_10pct_noise.csv'
+        'PEER_moderate_60ms_latency.csv'
+        'PEER_moderate_8pct_dropout.csv'
+        'PEER_moderate_combined_stress.csv'
     };
 
     exists = true;

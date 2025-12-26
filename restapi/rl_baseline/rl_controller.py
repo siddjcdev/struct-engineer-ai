@@ -25,21 +25,33 @@ class RLTMDController:
     def __init__(self, model_path: str):
         """
         Initialize RL controller
-        
+
         Args:
             model_path: Path to trained .zip model file
         """
         print(f"RLTMDController: Loading RL model from {model_path}...")
-        
+
         # Load trained SAC model
         self.model = SAC.load(model_path, device='cpu')
-        
+
         # Force limits
         self.max_force = 100000.0  # 100 kN in Newtons
-        
+
+        # SAFETY: Observation bounds (MUST match training environment)
+        # These bounds prevent out-of-distribution inputs on extreme earthquakes
+        self.obs_bounds = {
+            'roof_disp': (-0.5, 0.5),      # ±50 cm
+            'roof_vel': (-2.0, 2.0),       # ±2.0 m/s
+            'tmd_disp': (-0.6, 0.6),       # ±60 cm
+            'tmd_vel': (-2.5, 2.5)         # ±2.5 m/s
+        }
+        self.clip_warnings = 0  # Track how many times we clip observations
+
         print(f"✅ RLTMDController: RL model loaded successfully")
         print(f"   RLTMDController:     Model type: {type(self.model).__name__}")
         print(f"   RLTMDController:     Device: {self.model.device}")
+        print(f"   RLTMDController:     Observation bounds: roof_disp={self.obs_bounds['roof_disp']}, "
+              f"roof_vel={self.obs_bounds['roof_vel']}")
     
     
     def predict(
@@ -52,37 +64,54 @@ class RLTMDController:
     ) -> float:
         """
         Predict control force for given state
-        
+
         Args:
             roof_displacement: Roof displacement (meters)
             roof_velocity: Roof velocity (m/s)
             tmd_displacement: TMD displacement (meters)
             tmd_velocity: TMD velocity (m/s)
             deterministic: Use deterministic policy (recommended for deployment)
-            
+
         Returns:
             Control force in Newtons
         """
-        
+
+        # SAFETY: Clip observations to training bounds
+        # This prevents catastrophic failures on extreme earthquakes
+        clipped = False
+
+        roof_disp_clip = np.clip(roof_displacement, *self.obs_bounds['roof_disp'])
+        roof_vel_clip = np.clip(roof_velocity, *self.obs_bounds['roof_vel'])
+        tmd_disp_clip = np.clip(tmd_displacement, *self.obs_bounds['tmd_disp'])
+        tmd_vel_clip = np.clip(tmd_velocity, *self.obs_bounds['tmd_vel'])
+
+        if (roof_disp_clip != roof_displacement or roof_vel_clip != roof_velocity or
+            tmd_disp_clip != tmd_displacement or tmd_vel_clip != tmd_velocity):
+            clipped = True
+            self.clip_warnings += 1
+            if self.clip_warnings <= 5:  # Only print first 5 warnings
+                print(f"⚠️  RL SAFETY: Observation out of bounds, clipping to training range")
+                print(f"    Original: roof_d={roof_displacement:.3f}, roof_v={roof_velocity:.3f}, "
+                      f"tmd_d={tmd_displacement:.3f}, tmd_v={tmd_velocity:.3f}")
+                print(f"    Clipped:  roof_d={roof_disp_clip:.3f}, roof_v={roof_vel_clip:.3f}, "
+                      f"tmd_d={tmd_disp_clip:.3f}, tmd_v={tmd_vel_clip:.3f}")
+
         # Create observation (same format as training)
         obs = np.array([
-            roof_displacement,
-            roof_velocity,
-            tmd_displacement,
-            tmd_velocity
+            roof_disp_clip,
+            roof_vel_clip,
+            tmd_disp_clip,
+            tmd_vel_clip
         ], dtype=np.float32)
-        
-        #print(f"RL SINGLE: Predicting for obs: {obs}")
+
         # Get action from policy (returns normalized force in [-1, 1])
         action, _ = self.model.predict(obs, deterministic=deterministic)
-        
-        #print(f"RL SINGLE: Raw action from model: {action}")
+
         # Scale to actual force
         force_N = float(action[0]) * self.max_force
-        
+
         # Clamp to limits (safety)
         force_N = np.clip(force_N, -self.max_force, self.max_force)
-        #print(f"RL SINGLE: Clamped force: {force_N} N")
         return force_N
     
     
@@ -168,8 +197,16 @@ class RLTMDController:
             forces = []
 
             while not done:
+                # SAFETY: Clip observation to training bounds before inference
+                # This prevents catastrophic failures on extreme earthquakes
+                obs_clipped = np.clip(obs,
+                                     [self.obs_bounds['roof_disp'][0], self.obs_bounds['roof_vel'][0],
+                                      self.obs_bounds['tmd_disp'][0], self.obs_bounds['tmd_vel'][0]],
+                                     [self.obs_bounds['roof_disp'][1], self.obs_bounds['roof_vel'][1],
+                                      self.obs_bounds['tmd_disp'][1], self.obs_bounds['tmd_vel'][1]])
+
                 # Get action from model
-                action, _ = self.model.predict(obs, deterministic=True)
+                action, _ = self.model.predict(obs_clipped, deterministic=True)
                 forces.append(float(action[0]) * self.max_force)
 
                 # Step environment
