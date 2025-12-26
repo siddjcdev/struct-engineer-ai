@@ -1,0 +1,164 @@
+
+╔════════════════════════════════════════════════════════╗
+║  4-WAY TMD CONTROLLER COMPARISON TEST                  ║
+╚════════════════════════════════════════════════════════╝
+
+🔍 Checking prerequisites...
+
+  [1/2] Checking API connection... ✅
+        Status: healthy
+  [2/2] Checking earthquake files... ✅ All PEER synthetic earthquake datasets found
+✅
+
+✓ All prerequisites satisfied!
+
+Select test mode:
+  1. Quick demo (TEST3 only, ~1 min)
+  2. Run all 8 scenarios (~10 min)
+  3. Run specific scenario
+  4. Robustness tests only (TEST6a-e)
+
+Enter choice (1-4): 2
+
+═══ COMPREHENSIVE 4-WAY COMPARISON (8 SCENARIOS) ═══
+
+🏗️  Building structural system...
+  Building: 12 floors, First mode: 5.066 s
+✓ System built
+
+🚀 Starting 4-way comparison...
+
+════════════════════════════════════════════════════════
+  SCENARIO 1/8: PEER_Small - Small (M4.5, 0.25g)
+════════════════════════════════════════════════════════
+
+  Earthquake: 1001 steps, 20.0 seconds
+  PGA: 2.676 m/s² (0.27g)
+
+  [1/4] Testing Passive TMD... Peak: 28.34 cm (0.02 s)
+  [2/4] Testing Fuzzy Logic (full simulation)... Peak: 5.82 cm, Force: 18.2 kN (0.26 s)
+  [3/4] Testing RL Base (full simulation)... Peak: 0.91 cm, Force: 38.0 kN (0.97 s)
+  [4/4] Testing RL_CL (full simulation)... Peak: 1.03 cm, Force: 86.4 kN (0.91 s)
+
+════════════════════════════════════════════════════════
+  SCENARIO 2/8: PEER_Moderate - Moderate (M5.7, 0.35g)
+════════════════════════════════════════════════════════
+  Earthquake: 2001 steps, 40.0 seconds
+  PGA: 3.753 m/s² (0.38g)
+
+  [1/4] Testing Passive TMD... Peak: 29.95 cm (0.02 s)
+  [2/4] Testing Fuzzy Logic (full simulation)... Peak: 12.29 cm, Force: 38.3 kN (0.39 s)
+  [3/4] Testing RL Base (full simulation)... Peak: 6.45 cm, Force: 50.4 kN (1.79 s)
+  [4/4] Testing RL_CL (full simulation)... Peak: 6.20 cm, Force: 101.3 kN (1.76 s)
+
+════════════════════════════════════════════════════════
+  SCENARIO 3/8: PEER_High - High (M7.4, 0.75g)
+════════════════════════════════════════════════════════
+
+  Earthquake: 4001 steps, 80.0 seconds
+  PGA: 8.918 m/s² (0.91g)
+
+  [1/4] Testing Passive TMD... Peak: 171.46 cm (0.01 s)
+  [2/4] Testing Fuzzy Logic (full simulation)... Peak: 29.46 cm, Force: 51.3 kN (0.52 s)
+  [3/4] Testing RL Base (full simulation)... Peak: 827.10 cm, Force: 83.3 kN (3.41 s)
+  [4/4] Testing RL_CL (full simulation)... Peak: 543.85 cm, Force: 125.5 kN (1.77 s)
+
+════════════════════════════════════════════════════════
+  SCENARIO 4/8: PEER_Insane - Insane (M8.4, 0.9g)
+════════════════════════════════════════════════════════
+
+  Earthquake: 6001 steps, 120.0 seconds
+  PGA: 10.711 m/s² (1.09g)
+
+  [1/4] Testing Passive TMD... Peak: 392.29 cm (0.02 s)
+  [2/4] Testing Fuzzy Logic (full simulation)... Peak: 142.34 cm, Force: 74.2 kN (0.85 s)
+  [3/4] Testing RL Base (full simulation)... Peak: 39.69 cm, Force: 51.9 kN (5.03 s)
+  [4/4] Testing RL_CL (full simulation)... Peak: 38.61 cm, Force: 80.3 kN (1.76 s)
+
+════════════════════════════════════════════════════════
+  SCENARIO 5/8: Mod_10Noise - Moderate + 10% Noise
+════════════════════════════════════════════════════════
+  Earthquake: 2001 steps, 40.0 seconds
+  PGA: 3.433 m/s² (0.35g)
+
+  [1/4] Testing Passive TMD... Peak: 1.58 cm (0.02 s)
+  [2/4] Testing Fuzzy Logic (full simulation)... Peak: 6.62 cm, Force: 36.4 kN (0.28 s)
+  [3/4] Testing RL Base (full simulation)... Peak: 5.57 cm, Force: 50.8 kN (1.76 s)
+  [4/4] Testing RL_CL (full simulation)... Peak: 4.86 cm, Force: 95.4 kN (1.76 s)
+
+════════════════════════════════════════════════════════
+  SCENARIO 6/8: Mod_60Latency - Moderate + 60ms Latency
+════════════════════════════════════════════════════════
+
+  Earthquake: 2001 steps, 40.0 seconds
+  PGA: 3.433 m/s² (0.35g)
+
+  [1/4] Testing Passive TMD... Peak: 1.58 cm (0.01 s)
+  [2/4] Testing Fuzzy Logic (full simulation)... Peak: 6.62 cm, Force: 36.4 kN (0.30 s)
+  [3/4] Testing RL Base (full simulation)... Peak: 5.57 cm, Force: 50.8 kN (1.75 s)
+  [4/4] Testing RL_CL (full simulation)... Peak: 4.86 cm, Force: 95.4 kN (1.75 s)
+
+════════════════════════════════════════════════════════
+  SCENARIO 7/8: Mod_8Dropout - Moderate + 8% Dropout
+════════════════════════════════════════════════════════
+
+  Earthquake: 2001 steps, 40.0 seconds
+  PGA: 3.433 m/s² (0.35g)
+
+  [1/4] Testing Passive TMD... Peak: 1.58 cm (0.01 s)
+  [2/4] Testing Fuzzy Logic (full simulation)... Peak: 6.62 cm, Force: 36.4 kN (0.28 s)
+  [3/4] Testing RL Base (full simulation)... Peak: 5.57 cm, Force: 50.8 kN (1.76 s)
+  [4/4] Testing RL_CL (full simulation)... Peak: 4.86 cm, Force: 95.4 kN (1.75 s)
+
+════════════════════════════════════════════════════════
+  SCENARIO 8/8: Mod_Combined - Moderate + Combined Stress
+════════════════════════════════════════════════════════
+
+  Earthquake: 2001 steps, 40.0 seconds
+  PGA: 3.433 m/s² (0.35g)
+
+  [1/4] Testing Passive TMD... Peak: 1.58 cm (0.01 s)
+  [2/4] Testing Fuzzy Logic (full simulation)... Peak: 6.62 cm, Force: 36.4 kN (0.26 s)
+  [3/4] Testing RL Base (full simulation)... Peak: 5.57 cm, Force: 50.8 kN (1.75 s)
+  [4/4] Testing RL_CL (full simulation)... Peak: 4.86 cm, Force: 95.4 kN (1.74 s)
+
+════════════════════════════════════════════════════════
+  CALCULATING IMPROVEMENTS
+════════════════════════════════════════════════════════
+
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+                           COMPARISON RESULTS (4 CONTROLLERS)
+════════════════════════════════════════════════════════════════════════════════════════════════════
+
+Scenario   |    Passive |        Fuzzy |      RL Base |        RL CL |       Winner
+           |       (cm) |     (cm / %) |     (cm / %) |     (cm / %) |             
+-----------+------------+--------------+--------------+--------------+--------------
+PEER_Small |   28.34   |   5.82/79.5% |   0.91/96.8% |   1.03/96.4% |      RL Base
+PEER_Moderate |   29.95   |  12.29/59.0% |   6.45/78.5% |   6.20/79.3% |        RL CL
+PEER_High  |  171.46   |  29.46/82.8% | 827.10/-382.4% | 543.85/-217.2% |        Fuzzy
+PEER_Insane |  392.29   | 142.34/63.7% |  39.69/89.9% |  38.61/90.2% |        RL CL
+Mod_10Noise |    1.58   |   6.62/-317.8% |   5.57/-251.6% |   4.86/-207.2% |        RL CL
+Mod_60Latency |    1.58   |   6.62/-317.8% |   5.57/-251.6% |   4.86/-207.2% |        RL CL
+Mod_8Dropout |    1.58   |   6.62/-317.8% |   5.57/-251.6% |   4.86/-207.2% |        RL CL
+Mod_Combined |    1.58   |   6.62/-317.8% |   5.57/-251.6% |   4.86/-207.2% |        RL CL
+-----------+------------+--------------+--------------+--------------+--------------
+AVERAGE    |   78.55   |  27.05/-123.3% | 112.05/-140.5% |  76.14/-97.5% |            -
+
+FORCE STATISTICS:
+Controller      |     Avg (kN) |     Max (kN) |      Efficiency
+----------------+--------------+--------------+-----------------
+Fuzzy           |         40.9 |         80.1 |          -3.011 %/kN
+RL Baseline     |         53.4 |         99.6 |          -2.632 %/kN
+RL CL           |         96.9 |        150.0 |          -1.006 %/kN
+
+════════════════════════════════════════════════════════════════════════════════════════════════════
+Warning: Exported image displays axes toolbar. To remove axes toolbar from image, export again. 
+  ✓ Saved: 4way_comparison_plots.png
+
+💾 Saved: 4way_comparison_comprehensive.mat
+💾 Saved: 4way_comparison_comprehensive.json
+
+═══ COMPREHENSIVE TEST COMPLETE ═══
+
+✓ All tests complete!
