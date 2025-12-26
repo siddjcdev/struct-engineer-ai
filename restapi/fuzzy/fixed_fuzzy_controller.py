@@ -392,23 +392,34 @@ class FixedFuzzyTMDController:
         beta_newmark = 0.25
         gamma = 0.5
 
-        # Pre-compute effective stiffness matrix (for efficiency)
+        # Pre-compute effective stiffness matrix and factorize it ONCE (HUGE performance gain!)
         K_eff = K + gamma / (beta_newmark * dt) * C + 1 / (beta_newmark * dt**2) * M
+
+        # LU factorization (do this ONCE instead of 6001 times!)
+        from scipy.linalg import lu_factor, lu_solve
+        K_eff_factored = lu_factor(K_eff)
+
+        # Pre-compute constant coefficients
+        coeff_d = 1 / (beta_newmark * dt**2)
+        coeff_c = gamma / (beta_newmark * dt)
+        half_minus_beta = 0.5 - beta_newmark
+        one_minus_gamma = 1 - gamma
 
         # Initialize state vectors
         displacement = np.zeros(n_dof)
         velocity = np.zeros(n_dof)
         acceleration = np.zeros(n_dof)
 
-        # Tracking for metrics
-        displacement_history = []
-        force_history = []
-        drift_history = []
+        # Pre-allocate tracking arrays (much faster than lists!)
+        n_steps = len(earthquake_data)
+        displacement_history = np.zeros(n_steps)
+        force_history = np.zeros(n_steps)
+        drift_history = np.zeros((n_steps, n_floors))
+
+        # Pre-allocate earthquake force vector base (avoid repeated concatenation)
+        eq_force_base = np.concatenate([np.ones(n_floors), [0]])
 
         # Simulation loop (closed-loop control!)
-        n_steps = len(earthquake_data)
-        forces = []
-
         for step in range(n_steps):
             # Get current ground acceleration
             ag = earthquake_data[step]
@@ -422,24 +433,25 @@ class FixedFuzzyTMDController:
 
             # Compute control force based on CURRENT state
             control_force = self.compute(roof_disp, roof_vel, tmd_disp, tmd_vel)
-            forces.append(control_force)
+            force_history[step] = control_force
 
             # ============ PHYSICS SIMULATION ============
-            # Earthquake force
-            F_eq = -ag * M @ np.concatenate([np.ones(n_floors), [0]])
+            # Earthquake force (optimized - reuse base vector)
+            F_eq = -ag * M @ eq_force_base
 
             # Apply control force (Newton's 3rd law)
             F_eq[roof_idx] -= control_force  # Roof gets reaction
             F_eq[12] += control_force  # TMD gets actuator force
 
-            # Newmark-beta time integration
-            d_pred = displacement + dt * velocity + (0.5 - beta_newmark) * dt**2 * acceleration
-            v_pred = velocity + (1 - gamma) * dt * acceleration
+            # Newmark-beta time integration (optimized with pre-computed coefficients)
+            d_pred = displacement + dt * velocity + half_minus_beta * dt**2 * acceleration
+            v_pred = velocity + one_minus_gamma * dt * acceleration
 
-            F_eff = F_eq + M @ (1 / (beta_newmark * dt**2) * d_pred) + C @ (gamma / (beta_newmark * dt) * d_pred)
+            F_eff = F_eq + M @ (coeff_d * d_pred) + C @ (coeff_c * d_pred)
 
-            displacement_new = np.linalg.solve(K_eff, F_eff)
-            acceleration_new = (1 / (beta_newmark * dt**2)) * (displacement_new - d_pred)
+            # Use pre-factorized matrix (FAST!)
+            displacement_new = lu_solve(K_eff_factored, F_eff)
+            acceleration_new = coeff_d * (displacement_new - d_pred)
             velocity_new = v_pred + gamma * dt * acceleration_new
 
             # Update state
@@ -447,41 +459,33 @@ class FixedFuzzyTMDController:
             velocity = velocity_new
             acceleration = acceleration_new
 
-            # Track metrics
-            displacement_history.append(displacement[roof_idx])
-            force_history.append(control_force)
+            # Track metrics (optimized - direct array assignment)
+            displacement_history[step] = displacement[roof_idx]
 
-            # Compute interstory drifts
-            drifts = np.zeros(n_floors)
-            drifts[0] = abs(displacement[0])
-            for i in range(1, n_floors):
-                drifts[i] = abs(displacement[i] - displacement[i-1])
-            drift_history.append(drifts)
+            # Compute interstory drifts (vectorized where possible)
+            drift_history[step, 0] = abs(displacement[0])
+            drift_history[step, 1:] = np.abs(displacement[1:n_floors] - displacement[0:n_floors-1])
 
-        # Compute metrics
-        displacements = np.array(displacement_history)
-        forces_array = np.array(force_history)
-
+        # Compute metrics (arrays already pre-allocated, no conversion needed!)
         # 1. RMS of roof displacement
-        rms_roof = np.sqrt(np.mean(displacements**2))
+        rms_roof = np.sqrt(np.mean(displacement_history**2))
 
         # 2. Peak roof displacement
-        peak_roof = np.max(np.abs(displacements))
+        peak_roof = np.max(np.abs(displacement_history))
 
         # 3. Max drift across all floors and time
-        drift_array = np.array(drift_history)
-        max_drift = np.max(drift_array)
+        max_drift = np.max(drift_history)
 
         # 4. DCR (Drift Concentration Ratio)
-        max_drift_per_floor = np.max(drift_array, axis=0)
+        max_drift_per_floor = np.max(drift_history, axis=0)
         if len(max_drift_per_floor) > 0 and np.mean(max_drift_per_floor) > 1e-10:
             DCR = np.max(max_drift_per_floor) / np.mean(max_drift_per_floor)
         else:
             DCR = 0.0
 
         # 5. Peak and mean force
-        peak_force = np.max(np.abs(forces_array))
-        mean_force = np.mean(np.abs(forces_array))
+        peak_force = np.max(np.abs(force_history))
+        mean_force = np.mean(np.abs(force_history))
 
         return {
             'rms_roof_displacement': float(rms_roof),
@@ -492,9 +496,9 @@ class FixedFuzzyTMDController:
             'mean_force': float(mean_force),
             'peak_force_kN': float(peak_force / 1000),
             'mean_force_kN': float(mean_force / 1000),
-            'forces': forces,
-            'forces_N': forces,
-            'forces_kN': [f/1000 for f in forces]
+            'forces': force_history.tolist(),
+            'forces_N': force_history.tolist(),
+            'forces_kN': (force_history / 1000).tolist()
         }
 
     def get_stats(self):
