@@ -136,20 +136,25 @@ function run_quick_demo(API_URL, folder, N, m0, k0, zeta_target, dt, soft_story_
 end
 
 %% ============================================================
-%% RUN ALL 4 PEER SCENARIOS (SMALL → INSANE)
+%% RUN ALL 8 SCENARIOS (4 BASE + 4 MODERATE PERTURBATION TESTS)
 %% ============================================================
 function run_all_scenarios(API_URL, folder, N, m0, k0, zeta_target, dt, soft_story_idx, soft_story_factor, tmd_mass)
-    fprintf('\n═══ COMPREHENSIVE 4-WAY COMPARISON (4 PEER SCENARIOS) ═══\n\n');
+    fprintf('\n═══ COMPREHENSIVE 4-WAY COMPARISON (8 SCENARIOS) ═══\n\n');
 
-    % All scenarios include realistic perturbations:
-    % - 10% noise (sensor noise + site effects)
-    % - 60ms delay (communication latency)
-    % - 8% dropout (packet loss with hold-last-value)
+    % Base datasets (perturbations baked in: 10% noise, 60ms delay, 8% dropout)
+    % CLEAN dataset (no perturbations - for custom testing in MATLAB)
     scenarios = {
-        'PEER_Small',    'Small (M4.5, 0.25g)',    fullfile(folder, 'peer_synthetic', 'PEER_small_M4.5_PGA0.25g.csv'),       struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'PEER_Moderate', 'Moderate (M5.7, 0.35g)', fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g.csv'),   struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'PEER_High',     'High (M7.4, 0.75g)',     fullfile(folder, 'peer_synthetic', 'PEER_high_M7.4_PGA0.75g.csv'),       struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'PEER_Insane',   'Insane (M8.4, 0.9g)',    fullfile(folder, 'peer_synthetic', 'PEER_insane_M8.4_PGA0.9g.csv'),      struct('noise', 0, 'latency', 0, 'dropout', 0);
+        % === 4 Base Earthquakes (with baked-in perturbations) ===
+        'PEER_Small',    'Small (M4.5, 0.25g)',          fullfile(folder, 'peer_synthetic', 'PEER_small_M4.5_PGA0.25g.csv'),         struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_Moderate', 'Moderate (M5.7, 0.35g)',       fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g.csv'),     struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_High',     'High (M7.4, 0.75g)',           fullfile(folder, 'peer_synthetic', 'PEER_high_M7.4_PGA0.75g.csv'),         struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_Insane',   'Insane (M8.4, 0.9g)',          fullfile(folder, 'peer_synthetic', 'PEER_insane_M8.4_PGA0.9g.csv'),        struct('noise', 0, 'latency', 0, 'dropout', 0);
+
+        % === 4 Moderate Tests (CLEAN + different MATLAB perturbations) ===
+        'Mod_10Noise',   'Moderate + 10% Noise',         fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0.10, 'latency', 0, 'dropout', 0);
+        'Mod_60Latency', 'Moderate + 60ms Latency',      fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0, 'latency', 0.060, 'dropout', 0);
+        'Mod_8Dropout',  'Moderate + 8% Dropout',        fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0.08);
+        'Mod_Combined',  'Moderate + Combined Stress',   fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0.10, 'latency', 0.060, 'dropout', 0.08);
     };
 
     results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt, soft_story_idx, soft_story_factor, tmd_mass);
@@ -168,22 +173,34 @@ end
 %% ============================================================
 function run_specific_scenario(API_URL, folder, N, m0, k0, zeta_target, dt, soft_story_idx, soft_story_factor, tmd_mass)
     fprintf('\n═══ SELECT SCENARIO ═══\n\n');
+    fprintf('  BASE EARTHQUAKES:\n');
     fprintf('  1. Small: M4.5, PGA 0.25g (20s)\n');
     fprintf('  2. Moderate: M5.7, PGA 0.35g (40s)\n');
     fprintf('  3. High: M7.4, PGA 0.75g (80s)\n');
     fprintf('  4. Insane: M8.4, PGA 0.9g (120s)\n\n');
-    fprintf('  All scenarios include: 10%% noise, 60ms delay, 8%% dropout\n\n');
+    fprintf('  MODERATE + PERTURBATIONS:\n');
+    fprintf('  5. Moderate + 10%% Noise\n');
+    fprintf('  6. Moderate + 60ms Latency\n');
+    fprintf('  7. Moderate + 8%% Dropout\n');
+    fprintf('  8. Moderate + Combined Stress\n\n');
 
-    test_num = input('Enter test number (1-4): ');
+    test_num = input('Enter test number (1-8): ');
 
     all_scenarios = {
-        'PEER_Small',    'Small (M4.5, 0.25g)',    fullfile(folder, 'peer_synthetic', 'PEER_small_M4.5_PGA0.25g.csv'),       struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'PEER_Moderate', 'Moderate (M5.7, 0.35g)', fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g.csv'),   struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'PEER_High',     'High (M7.4, 0.75g)',     fullfile(folder, 'peer_synthetic', 'PEER_high_M7.4_PGA0.75g.csv'),       struct('noise', 0, 'latency', 0, 'dropout', 0);
-        'PEER_Insane',   'Insane (M8.4, 0.9g)',    fullfile(folder, 'peer_synthetic', 'PEER_insane_M8.4_PGA0.9g.csv'),      struct('noise', 0, 'latency', 0, 'dropout', 0);
+        % === 4 Base Earthquakes (with baked-in perturbations) ===
+        'PEER_Small',    'Small (M4.5, 0.25g)',          fullfile(folder, 'peer_synthetic', 'PEER_small_M4.5_PGA0.25g.csv'),         struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_Moderate', 'Moderate (M5.7, 0.35g)',       fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g.csv'),     struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_High',     'High (M7.4, 0.75g)',           fullfile(folder, 'peer_synthetic', 'PEER_high_M7.4_PGA0.75g.csv'),         struct('noise', 0, 'latency', 0, 'dropout', 0);
+        'PEER_Insane',   'Insane (M8.4, 0.9g)',          fullfile(folder, 'peer_synthetic', 'PEER_insane_M8.4_PGA0.9g.csv'),        struct('noise', 0, 'latency', 0, 'dropout', 0);
+
+        % === 4 Moderate Tests (CLEAN + different MATLAB perturbations) ===
+        'Mod_10Noise',   'Moderate + 10% Noise',         fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0.10, 'latency', 0, 'dropout', 0);
+        'Mod_60Latency', 'Moderate + 60ms Latency',      fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0, 'latency', 0.060, 'dropout', 0);
+        'Mod_8Dropout',  'Moderate + 8% Dropout',        fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0, 'latency', 0, 'dropout', 0.08);
+        'Mod_Combined',  'Moderate + Combined Stress',   fullfile(folder, 'peer_synthetic', 'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'), struct('noise', 0.10, 'latency', 0.060, 'dropout', 0.08);
     };
 
-    if test_num < 1 || test_num > 4
+    if test_num < 1 || test_num > 8
         fprintf('Invalid choice.\n');
         return;
     end
@@ -976,6 +993,7 @@ function exists = check_datasets_exist(folder)
         'PEER_moderate_M5.7_PGA0.35g.csv'
         'PEER_high_M7.4_PGA0.75g.csv'
         'PEER_insane_M8.4_PGA0.9g.csv'
+        'PEER_moderate_M5.7_PGA0.35g_CLEAN.csv'
     };
 
     exists = true;

@@ -133,14 +133,15 @@ def main():
     output_dir = Path('/home/user/struct-engineer-ai/matlab/data/earthquakes/peer_synthetic')
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Earthquake scenarios
-    scenarios = [
+    # Earthquake scenarios with perturbations
+    scenarios_perturbed = [
         {
             'name': 'PEER_small_M4.5_PGA0.25g',
             'description': 'Small Earthquake - Magnitude 4.5 (0.25g PGA)',
             'magnitude': 4.5,
             'pga_g': 0.25,
-            'duration': 20.0,  # Small earthquakes are shorter
+            'duration': 20.0,
+            'perturbations': {'noise_level': 0.10, 'delay_ms': 60, 'dropout_rate': 0.08},
         },
         {
             'name': 'PEER_moderate_M5.7_PGA0.35g',
@@ -148,38 +149,53 @@ def main():
             'magnitude': 5.7,
             'pga_g': 0.35,
             'duration': 40.0,
+            'perturbations': {'noise_level': 0.10, 'delay_ms': 60, 'dropout_rate': 0.08},
         },
         {
             'name': 'PEER_high_M7.4_PGA0.75g',
             'description': 'High Magnitude Earthquake - 7.4 (0.75g PGA)',
             'magnitude': 7.4,
             'pga_g': 0.75,
-            'duration': 80.0,  # Larger earthquakes have longer duration
+            'duration': 80.0,
+            'perturbations': {'noise_level': 0.10, 'delay_ms': 60, 'dropout_rate': 0.08},
         },
         {
             'name': 'PEER_insane_M8.4_PGA0.9g',
             'description': 'Insane Magnitude Earthquake - 8.4 (0.9g PGA)',
             'magnitude': 8.4,
             'pga_g': 0.90,
-            'duration': 120.0,  # Very long duration for M8+
+            'duration': 120.0,
+            'perturbations': {'noise_level': 0.10, 'delay_ms': 60, 'dropout_rate': 0.08},
         },
     ]
 
-    # Perturbation parameters (applied to all)
-    perturbations = {
-        'noise_level': 0.10,    # 10% noise
-        'delay_ms': 60,         # 60ms delay
-        'dropout_rate': 0.08,   # 8% dropout
+    # Clean baseline (for perturbation testing in MATLAB)
+    scenario_clean = {
+        'name': 'PEER_moderate_M5.7_PGA0.35g_CLEAN',
+        'description': 'Moderate Earthquake - CLEAN (no perturbations)',
+        'magnitude': 5.7,
+        'pga_g': 0.35,
+        'duration': 40.0,
+        'perturbations': {'noise_level': 0.0, 'delay_ms': 0, 'dropout_rate': 0.0},
     }
 
-    print("Generating PEER-based synthetic earthquake ground motions...")
-    print(f"Perturbations: {perturbations}\n")
+    print("Generating PEER-based synthetic earthquake ground motions...\n")
 
-    for scenario in scenarios:
+    # Combine all scenarios
+    all_scenarios = scenarios_perturbed + [scenario_clean]
+
+    for scenario in all_scenarios:
         print(f"Generating: {scenario['name']}")
         print(f"  Magnitude: {scenario['magnitude']}")
         print(f"  PGA: {scenario['pga_g']:.2f}g ({scenario['pga_g']*9.81:.2f} m/s²)")
         print(f"  Duration: {scenario['duration']:.1f}s")
+
+        # Show perturbations
+        perts = scenario['perturbations']
+        if perts['noise_level'] > 0 or perts['dropout_rate'] > 0:
+            print(f"  Perturbations: {perts['noise_level']*100}% noise, {perts['delay_ms']}ms delay, {perts['dropout_rate']*100}% dropout")
+        else:
+            print(f"  Perturbations: CLEAN (no perturbations)")
 
         # Generate earthquake
         data = generate_earthquake(
@@ -187,7 +203,7 @@ def main():
             pga_g=scenario['pga_g'],
             duration=scenario['duration'],
             dt=0.02,
-            **perturbations
+            **scenario['perturbations']
         )
 
         # Save to CSV
@@ -218,18 +234,28 @@ def main():
         f.write("- Applied perturbations (noise, dropout, delay)\n\n")
 
         f.write("## Scenarios\n\n")
-        for scenario in scenarios:
-            f.write(f"### {scenario['name']}\n")
-            f.write(f"- **Description:** {scenario['description']}\n")
-            f.write(f"- **Magnitude:** {scenario['magnitude']}\n")
-            f.write(f"- **PGA:** {scenario['pga_g']}g ({scenario['pga_g']*9.81:.2f} m/s²)\n")
-            f.write(f"- **Duration:** {scenario['duration']}s\n")
-            f.write(f"- **Timestep:** 0.02s (50 Hz)\n\n")
+        f.write("### With Perturbations (10% noise, 60ms delay, 8% dropout)\n\n")
+        for scenario in scenarios_perturbed:
+            f.write(f"**{scenario['name']}**\n")
+            f.write(f"- Description: {scenario['description']}\n")
+            f.write(f"- Magnitude: {scenario['magnitude']}\n")
+            f.write(f"- PGA: {scenario['pga_g']}g ({scenario['pga_g']*9.81:.2f} m/s²)\n")
+            f.write(f"- Duration: {scenario['duration']}s\n\n")
 
-        f.write("## Perturbations Applied\n\n")
-        f.write(f"- **Noise:** {perturbations['noise_level']*100}% of PGA (sensor noise)\n")
-        f.write(f"- **Delay:** {perturbations['delay_ms']}ms (communication delay)\n")
-        f.write(f"- **Dropout:** {perturbations['dropout_rate']*100}% (packet loss)\n\n")
+        f.write("### Clean Baseline (No Perturbations)\n\n")
+        f.write(f"**{scenario_clean['name']}**\n")
+        f.write(f"- Description: {scenario_clean['description']}\n")
+        f.write(f"- Magnitude: {scenario_clean['magnitude']}\n")
+        f.write(f"- PGA: {scenario_clean['pga_g']}g ({scenario_clean['pga_g']*9.81:.2f} m/s²)\n")
+        f.write(f"- Duration: {scenario_clean['duration']}s\n")
+        f.write(f"- Use this for testing different perturbation configurations in MATLAB\n\n")
+
+        f.write("## Perturbations\n\n")
+        f.write("Perturbed datasets include:\n")
+        f.write(f"- **Noise:** 10% of PGA (sensor noise + site effects)\n")
+        f.write(f"- **Delay:** 60ms (communication latency)\n")
+        f.write(f"- **Dropout:** 8% (packet loss with hold-last-value)\n\n")
+        f.write("Clean dataset has NO perturbations for custom testing.\n\n")
 
         f.write("## CSV Format\n\n")
         f.write("Columns:\n")
