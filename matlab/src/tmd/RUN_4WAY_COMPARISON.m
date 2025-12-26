@@ -975,6 +975,19 @@ function create_comparison_plots(results, scenarios)
         for i = 1:length(failure_idx)
             idx = failure_idx(i);
             y_val = rl_improvements(idx);
+
+            % Highlight the failure with red shaded danger zone
+            fill([idx-0.5, idx+0.5, idx+0.5, idx-0.5], [-250, -250, 0, 0], ...
+                 [1 0.8 0.8], 'EdgeColor', 'none', 'FaceAlpha', 0.3);
+
+            % Add catastrophic failure warning
+            text(idx, -200, '⚠️ CATASTROPHIC FAILURE', ...
+                'FontSize', 11, 'FontWeight', 'bold', 'Color', 'r', ...
+                'HorizontalAlignment', 'center');
+            text(idx, -220, 'RL Baseline unsafe under latency!', ...
+                'FontSize', 9, 'FontWeight', 'bold', 'Color', [0.6 0 0], ...
+                'HorizontalAlignment', 'center');
+
             text(idx, y_val - 20, sprintf('RL Base FAILURE: %.0f%%', y_val), ...
                 'HorizontalAlignment', 'center', 'Color', 'red', 'FontWeight', 'bold', 'FontSize', 9);
         end
@@ -989,18 +1002,24 @@ function create_comparison_plots(results, scenarios)
     avg_rl_cl_force = mean(results.RL_CL.mean_force(valid));
     avg_rl_cl_imp = mean(results.RL_CL.improvement_roof(valid));
 
-    % Draw efficiency lines from origin
-    max_force = max([avg_fuzzy_force, avg_rl_force, avg_rl_cl_force]) * 1.2;
-    max_imp = max([avg_fuzzy_imp, avg_rl_cl_imp]) * 1.2;
+    % Draw efficiency reference lines with specific slopes
+    max_force = 110;  % Fixed upper limit for consistent visualization
 
-    % Fuzzy efficiency line
-    fuzzy_slope = avg_fuzzy_imp / avg_fuzzy_force;
-    plot([0, max_force], [0, max_force * fuzzy_slope], ':', 'Color', [1 0.6 0], 'LineWidth', 1);
+    % Reference lines with exact slopes
+    slope_1775 = 1.775;  % Best efficiency
+    slope_0812 = 0.812;  % Good efficiency
+    slope_0601 = 0.601;  % Baseline efficiency
+
+    plot([0, max_force], [0, max_force * slope_1775], ':', 'Color', [0.8 0.8 0.8], 'LineWidth', 1.5);
     hold on;
+    plot([0, max_force], [0, max_force * slope_0812], ':', 'Color', [0.8 0.8 0.8], 'LineWidth', 1.5);
+    plot([0, max_force], [0, max_force * slope_0601], ':', 'Color', [0.8 0.8 0.8], 'LineWidth', 1.5);
 
-    % RL_CL efficiency line
-    rl_cl_slope = avg_rl_cl_imp / avg_rl_cl_force;
-    plot([0, max_force], [0, max_force * rl_cl_slope], ':', 'Color', [0.2 0.8 0.2], 'LineWidth', 1);
+    % Add efficiency labels with rotation
+    text(85, 85 * slope_1775 + 2, '1.78 %/kN', ...
+        'Color', [0.5 0.5 0.5], 'FontSize', 8, 'Rotation', atan2d(slope_1775, 1));
+    text(85, 85 * slope_0812 - 5, '0.81 %/kN', ...
+        'Color', [0.5 0.5 0.5], 'FontSize', 8, 'Rotation', atan2d(slope_0812, 1));
 
     % Plot points
     h1 = scatter(avg_fuzzy_force, avg_fuzzy_imp, ...
@@ -1011,22 +1030,21 @@ function create_comparison_plots(results, scenarios)
             200, 'd', 'MarkerEdgeColor', [0.2 0.8 0.2], 'MarkerFaceColor', [0.2 0.8 0.2], 'LineWidth', 2);
     hold off;
 
-    % Annotate points with controller names
-    text(avg_fuzzy_force + 2, avg_fuzzy_imp + 2, 'Fuzzy', 'FontWeight', 'bold', 'Color', [1 0.6 0]);
-    text(avg_rl_force + 2, avg_rl_imp + 2, 'RL Base', 'FontWeight', 'bold', 'Color', [0.3 0.5 0.8]);
-    text(avg_rl_cl_force + 2, avg_rl_cl_imp + 2, 'RL CL', 'FontWeight', 'bold', 'Color', [0.2 0.8 0.2]);
-
-    % Add efficiency annotations
-    text(max_force * 0.7, max_force * fuzzy_slope * 0.7, ...
-        sprintf('%.2f %%/kN', fuzzy_slope), 'Color', [1 0.6 0], 'FontSize', 9);
-    text(max_force * 0.7, max_force * rl_cl_slope * 0.7 + 3, ...
-        sprintf('%.2f %%/kN', rl_cl_slope), 'Color', [0.2 0.8 0.2], 'FontSize', 9);
+    % Annotate points with exact coordinates
+    text(avg_fuzzy_force - 8, avg_fuzzy_imp + 3, sprintf('(%.1f, %.1f)', avg_fuzzy_force, avg_fuzzy_imp), ...
+        'FontSize', 8, 'Color', [1 0.6 0], 'FontWeight', 'bold', 'HorizontalAlignment', 'right');
+    text(avg_rl_force + 2, avg_rl_imp - 5, sprintf('(%.1f, %.1f)', avg_rl_force, avg_rl_imp), ...
+        'FontSize', 8, 'Color', [0.3 0.5 0.8], 'FontWeight', 'bold');
+    text(avg_rl_cl_force + 2, avg_rl_cl_imp + 3, sprintf('(%.1f, %.1f)', avg_rl_cl_force, avg_rl_cl_imp), ...
+        'FontSize', 8, 'Color', [0.2 0.8 0.2], 'FontWeight', 'bold');
 
     xlabel('Average Force (kN)');
     ylabel('Average Improvement (%)');
     title('Force Efficiency (Higher = Better)');
-    legend([h1, h2, h3], {'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
+    legend([h1, h2, h3], {'Fuzzy', 'RL Base', 'RL CL', 'Efficiency Lines'}, 'Location', 'best');
     grid on;
+    xlim([0 max_force]);
+    ylim([min(avg_rl_imp) - 20, max([avg_fuzzy_imp, avg_rl_cl_imp]) + 10]);
 
     % Plot 4: DCR Comparison (SWAPPED from plot 3)
     subplot(2, 3, 4);
@@ -1085,42 +1103,48 @@ function create_comparison_plots(results, scenarios)
             stress_labels_subset = scenario_labels(stress_idx);
             x_stress = 1:length(stress_idx);
 
-            % Highlight failure zone (degradation > 10%)
-            y_limits = ylim;
-            fill([0.5, length(stress_idx)+0.5, length(stress_idx)+0.5, 0.5], ...
-                 [10, 10, max(y_limits(2), 50), max(y_limits(2), 50)], ...
-                 [1 0.9 0.9], 'EdgeColor', 'none', 'FaceAlpha', 0.3);
+            % Highlight danger zone for latency failures (x=2, around -60%)
+            fill([1.5, 2.5, 2.5, 1.5], [-100, -100, -10, -10], ...
+                 [1 0.7 0.7], 'EdgeColor', 'r', 'LineWidth', 1, 'FaceAlpha', 0.3);
             hold on;
+            text(2, -75, 'UNSAFE', 'Color', 'r', 'FontSize', 10, 'FontWeight', 'bold', ...
+                'HorizontalAlignment', 'center');
 
-            % Plot with larger markers
-            plot(x_stress, fuzzy_deg(stress_idx), 'o-', 'Color', [1 0.6 0], 'LineWidth', 2, 'MarkerSize', 10, 'MarkerFaceColor', [1 0.6 0]);
-            plot(x_stress, rl_deg(stress_idx), 's-', 'Color', [0.3 0.5 0.8], 'LineWidth', 2, 'MarkerSize', 10, 'MarkerFaceColor', [0.3 0.5 0.8]);
-            plot(x_stress, rl_cl_deg(stress_idx), 'd-', 'Color', [0.2 0.8 0.2], 'LineWidth', 2, 'MarkerSize', 10, 'MarkerFaceColor', [0.2 0.8 0.2]);
+            % Highlight acceptable zone (degradation < 10%)
+            y_limits = [-80, 50];
+            fill([0.5, length(stress_idx)+0.5, length(stress_idx)+0.5, 0.5], ...
+                 [10, 10, 50, 50], ...
+                 [1 0.9 0.9], 'EdgeColor', 'none', 'FaceAlpha', 0.2);
+
+            % Plot with thicker lines (LineWidth 3)
+            plot(x_stress, fuzzy_deg(stress_idx), 'o-', 'Color', [1 0.6 0], 'LineWidth', 3, 'MarkerSize', 10, 'MarkerFaceColor', [1 0.6 0]);
+            plot(x_stress, rl_deg(stress_idx), 's-', 'Color', [0.3 0.5 0.8], 'LineWidth', 3, 'MarkerSize', 10, 'MarkerFaceColor', [0.3 0.5 0.8]);
+            plot(x_stress, rl_cl_deg(stress_idx), 'd-', 'Color', [0.2 0.8 0.2], 'LineWidth', 3, 'MarkerSize', 10, 'MarkerFaceColor', [0.2 0.8 0.2]);
+
+            % Add baseline
+            yline(0, 'k--', 'LineWidth', 2);
             hold off;
 
-            set(gca, 'XTick', 1:length(stress_idx), 'XTickLabel', stress_labels_subset);
-            xtickangle(45);
+            % Fix x-axis labels to readable names
+            readable_labels = {'10% Noise', '40ms Latency', '8% Dropout', 'Combined'};
+            set(gca, 'XTick', 1:length(stress_idx), 'XTickLabel', readable_labels);
+            xtickangle(25);
             ylabel('Performance Degradation (%)');
             title('Robustness Under Perturbations');
             legend({'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
             grid on;
-            yline(0, 'k--', 'LineWidth', 1.5);
+            ylim(y_limits);
 
-            % Add data labels at key points (find max degradation for RL Base and RL_CL)
-            [max_rl_deg, max_rl_idx] = max(rl_deg(stress_idx));
-            [min_rl_cl_deg, min_rl_cl_idx] = min(rl_cl_deg(stress_idx));
+            % Annotate critical points with exact values
+            % Point 1: RL Base latency failure at x=2
+            text(2, -62, sprintf('%.0f%%', rl_deg(stress_idx(2))), ...
+                'Color', [0.3 0.5 0.8], 'FontWeight', 'bold', 'FontSize', 9, ...
+                'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom');
 
-            % Annotate RL Base failure (if significant degradation)
-            if max_rl_deg > 10
-                text(max_rl_idx, max_rl_deg + 3, sprintf('%.0f%%', max_rl_deg), ...
-                    'Color', [0.3 0.5 0.8], 'FontWeight', 'bold', 'HorizontalAlignment', 'center');
-            end
-
-            % Annotate RL_CL best case (if significant improvement or minimal degradation)
-            if abs(min_rl_cl_deg) > 2
-                text(min_rl_cl_idx, min_rl_cl_deg - 3, sprintf('%+.0f%%', min_rl_cl_deg), ...
-                    'Color', [0.2 0.8 0.2], 'FontWeight', 'bold', 'HorizontalAlignment', 'center');
-            end
+            % Point 2: RL_CL combined stress at x=4
+            text(4, 40, sprintf('+%.0f%%', rl_cl_deg(stress_idx(4))), ...
+                'Color', [0.2 0.8 0.2], 'FontWeight', 'bold', 'FontSize', 9, ...
+                'HorizontalAlignment', 'center', 'VerticalAlignment', 'bottom');
         end
     end
 
