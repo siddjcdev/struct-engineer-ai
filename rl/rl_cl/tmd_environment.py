@@ -95,9 +95,11 @@ class ImprovedTMDBuildingEnv(gym.Env):
         self.roof_acceleration = 0.0
 
         # NEW: Track additional metrics for API responses
-        self.displacement_history = []  # For RMS calculation
+        self.displacement_history = []  # For RMS calculation (roof only)
         self.force_history = []  # For peak and mean force
         self.drift_history = []  # For max drift and DCR
+        self.all_floor_displacement_history = []  # For peak displacement by floor
+        self.roof_acceleration_history = []  # For RMS roof acceleration
     
     
     def _build_mass_matrix(self) -> np.ndarray:
@@ -199,6 +201,8 @@ class ImprovedTMDBuildingEnv(gym.Env):
         self.displacement_history = []
         self.force_history = []
         self.drift_history = []
+        self.all_floor_displacement_history = []
+        self.roof_acceleration_history = []
 
         obs = np.array([
             self.displacement[11],
@@ -297,6 +301,8 @@ class ImprovedTMDBuildingEnv(gym.Env):
         # NEW: Track metrics for final reporting
         self.displacement_history.append(roof_disp)
         self.force_history.append(control_force)
+        self.all_floor_displacement_history.append(self.displacement[:self.n_floors].copy())  # Track all 12 floors
+        self.roof_acceleration_history.append(self.acceleration[11])  # Track roof acceleration
 
         # Compute interstory drifts for all floors
         drifts = self._compute_interstory_drifts(self.displacement[:self.n_floors])
@@ -371,7 +377,9 @@ class ImprovedTMDBuildingEnv(gym.Env):
                 'max_drift': 0.0,
                 'DCR': 0.0,
                 'peak_force': 0.0,
-                'mean_force': 0.0
+                'mean_force': 0.0,
+                'peak_disp_by_floor': [0.0] * self.n_floors,
+                'rms_roof_accel': 0.0
             }
 
         # Convert to numpy arrays
@@ -401,6 +409,14 @@ class ImprovedTMDBuildingEnv(gym.Env):
         peak_force = np.max(np.abs(forces))
         mean_force = np.mean(np.abs(forces))
 
+        # 6. Peak displacement by floor
+        all_floor_displacements = np.array(self.all_floor_displacement_history)  # Shape: (timesteps, n_floors)
+        peak_disp_by_floor = np.max(np.abs(all_floor_displacements), axis=0)  # Max over time for each floor
+
+        # 7. RMS roof acceleration
+        roof_accelerations = np.array(self.roof_acceleration_history)
+        rms_roof_accel = np.sqrt(np.mean(roof_accelerations**2))
+
         return {
             'rms_roof_displacement': float(rms_roof),
             'peak_roof_displacement': float(peak_roof),
@@ -409,7 +425,9 @@ class ImprovedTMDBuildingEnv(gym.Env):
             'peak_force': float(peak_force),
             'mean_force': float(mean_force),
             'peak_force_kN': float(peak_force / 1000),
-            'mean_force_kN': float(mean_force / 1000)
+            'mean_force_kN': float(mean_force / 1000),
+            'peak_disp_by_floor': peak_disp_by_floor.tolist(),  # NEW: Peak displacement at each floor
+            'rms_roof_accel': float(rms_roof_accel)             # NEW: RMS roof acceleration
         }
 
 
