@@ -1198,7 +1198,8 @@ function create_comparison_plots(results, scenarios)
 
     sgtitle('4-Way TMD Controller Comparison', 'FontSize', 14, 'FontWeight', 'bold');
 
-    saveas(fig, '4way_comparison_plots.png');
+    saveas(fig, ['4way_comparison_plots_' datestr(now, 'yyyy-mm-dd_HHMMSS') '.png']);
+
 end
 
 function create_analysis_plots(results, scenarios)

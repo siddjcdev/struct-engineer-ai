@@ -130,79 +130,79 @@ def main():
     """Generate all earthquake scenarios"""
 
     # Output directory
-    output_dir = Path('/home/user/struct-engineer-ai/matlab/data/earthquakes')
+    output_dir = Path('datasets/')
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Earthquake scenarios with perturbations
     scenarios_perturbed = [
-        {
-            'name': 'PEER_small_M4.5_PGA0.25g',
-            'description': 'Small Earthquake - Magnitude 4.5 (0.25g PGA)',
-            'magnitude': 4.5,
-            'pga_g': 0.25,
-            'duration': 20.0,
-            'perturbations': {'noise_level': 0.10, 'delay_ms': 60, 'dropout_rate': 0.08},
-        },
-        {
-            'name': 'PEER_moderate_M5.7_PGA0.35g',
-            'description': 'Moderate Earthquake - Magnitude 5.7 (0.35g PGA)',
-            'magnitude': 5.7,
-            'pga_g': 0.35,
-            'duration': 40.0,
-            'perturbations': {'noise_level': 0.10, 'delay_ms': 60, 'dropout_rate': 0.08},
-        },
-        {
-            'name': 'PEER_high_M7.4_PGA0.75g',
-            'description': 'High Magnitude Earthquake - 7.4 (0.75g PGA)',
-            'magnitude': 7.4,
-            'pga_g': 0.75,
-            'duration': 80.0,
-            'perturbations': {'noise_level': 0.10, 'delay_ms': 60, 'dropout_rate': 0.08},
-        },
-        {
-            'name': 'PEER_insane_M8.4_PGA0.9g',
-            'description': 'Insane Magnitude Earthquake - 8.4 (0.9g PGA)',
-            'magnitude': 8.4,
-            'pga_g': 0.90,
-            'duration': 120.0,
-            'perturbations': {'noise_level': 0.10, 'delay_ms': 60, 'dropout_rate': 0.08},
-        },
+        # {
+        #     'name': 'PEER_small_M4.5_PGA0.25g',
+        #     'description': 'Small Earthquake - Magnitude 4.5 (0.25g PGA)',
+        #     'magnitude': 4.5,
+        #     'pga_g': 0.25,
+        #     'duration': 20.0,
+        #     'perturbations': {'noise_level': 0.0, 'delay_ms': 0, 'dropout_rate': 0.0},
+        # },
+        # {
+        #     'name': 'PEER_moderate_M5.7_PGA0.35g',
+        #     'description': 'Moderate Earthquake - Magnitude 5.7 (0.35g PGA)',
+        #     'magnitude': 5.7,
+        #     'pga_g': 0.35,
+        #     'duration': 40.0,
+        #     'perturbations': {'noise_level': 0.0, 'delay_ms': 0, 'dropout_rate': 0.0},
+        # },
+        # {
+        #     'name': 'PEER_high_M7.4_PGA0.75g',
+        #     'description': 'High Magnitude Earthquake - 7.4 (0.75g PGA)',
+        #     'magnitude': 6.8,
+        #     'pga_g': 0.6,
+        #     'duration': 60.0,
+        #     'perturbations': {'noise_level': 0.0, 'delay_ms': 0, 'dropout_rate': 0.08},
+        # },
+        # {
+        #     'name': 'PEER_insane_M8.4_PGA0.9g',
+        #     'description': 'Insane Magnitude Earthquake - 8.4 (0.9g PGA)',
+        #     'magnitude': 8.4,
+        #     'pga_g': 0.90,
+        #     'duration': 120.0,
+        #     'perturbations': {'noise_level': 0.0, 'delay_ms': 0, 'dropout_rate': 0.0},
+        # },
     ]
 
     # Moderate earthquake with different perturbation configurations (for comparison)
     scenarios_moderate_variants = [
-        {
-            'name': 'PEER_moderate_10pct_noise',
-            'description': 'Moderate (M5.7) + 10% Noise ONLY',
-            'magnitude': 5.7,
-            'pga_g': 0.35,
-            'duration': 40.0,
-            'perturbations': {'noise_level': 0.10, 'delay_ms': 0, 'dropout_rate': 0.0},
-        },
+        # {
+        #     'name': 'PEER_moderate_10pct_noise',
+        #     'description': 'Moderate (M5.7) + 10% Noise ONLY',
+        #     'magnitude': 5.7,
+        #     'pga_g': 0.35,
+        #     'duration': 40.0,
+        #     'perturbations': {'noise_level': 0.10, 'delay_ms': 0, 'dropout_rate': 0.0},
+        # },
         {
             'name': 'PEER_moderate_60ms_latency',
-            'description': 'Moderate (M5.7) + 60ms Latency ONLY',
-            'magnitude': 5.7,
-            'pga_g': 0.35,
-            'duration': 40.0,
-            'perturbations': {'noise_level': 0.0, 'delay_ms': 60, 'dropout_rate': 0.0},
+            'description': 'Moderate (M4.5) + 40ms Latency ONLY',
+            'magnitude': 4.5,
+            'pga_g': 0.25,
+            'duration': 60.0,
+            'perturbations': {'noise_level': 0.0, 'delay_ms': 40, 'dropout_rate': 0.0},
         },
-        {
-            'name': 'PEER_moderate_8pct_dropout',
-            'description': 'Moderate (M5.7) + 8% Dropout ONLY',
-            'magnitude': 5.7,
-            'pga_g': 0.35,
-            'duration': 40.0,
-            'perturbations': {'noise_level': 0.0, 'delay_ms': 0, 'dropout_rate': 0.08},
-        },
-        {
-            'name': 'PEER_moderate_combined_stress',
-            'description': 'Moderate (M5.7) + ALL Perturbations',
-            'magnitude': 5.7,
-            'pga_g': 0.35,
-            'duration': 40.0,
-            'perturbations': {'noise_level': 0.10, 'delay_ms': 60, 'dropout_rate': 0.08},
-        },
+        # {
+        #     'name': 'PEER_moderate_8pct_dropout',
+        #     'description': 'Moderate (M5.7) + 8% Dropout ONLY',
+        #     'magnitude': 5.7,
+        #     'pga_g': 0.35,
+        #     'duration': 40.0,
+        #     'perturbations': {'noise_level': 0.0, 'delay_ms': 0, 'dropout_rate': 0.08},
+        # },
+        # {
+        #     'name': 'PEER_moderate_combined_stress',
+        #     'description': 'Moderate (M5.7) + ALL Perturbations',
+        #     'magnitude': 5.7,
+        #     'pga_g': 0.35,
+        #     'duration': 40.0,
+        #     'perturbations': {'noise_level': 0.10, 'delay_ms': 60, 'dropout_rate': 0.08},
+        # },
     ]
 
     print("Generating PEER-based synthetic earthquake ground motions...\n")
