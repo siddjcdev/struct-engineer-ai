@@ -1476,16 +1476,9 @@ function create_analysis_plots(results, scenarios)
 
     % Average peak displacement across all valid scenarios
     passive_avg_by_floor = mean(results.Passive.peak_disp_by_floor(:, valid_idx), 2) * 100;  % cm
-
-    % Check if data exists for other controllers (might be zeros if API didn't return it)
-    fuzzy_data = results.Fuzzy.peak_disp_by_floor(:, valid_idx);
-    rl_data = results.RL_Base.peak_disp_by_floor(:, valid_idx);
-    rl_cl_data = results.RL_CL.peak_disp_by_floor(:, valid_idx);
-
-    % Only average non-zero columns
-    fuzzy_avg_by_floor = mean(fuzzy_data, 2) * 100;
-    rl_avg_by_floor = mean(rl_data, 2) * 100;
-    rl_cl_avg_by_floor = mean(rl_cl_data, 2) * 100;
+    fuzzy_avg_by_floor = mean(results.Fuzzy.peak_disp_by_floor(:, valid_idx), 2) * 100;
+    rl_avg_by_floor = mean(results.RL_Base.peak_disp_by_floor(:, valid_idx), 2) * 100;
+    rl_cl_avg_by_floor = mean(results.RL_CL.peak_disp_by_floor(:, valid_idx), 2) * 100;
 
     floors = 1:N;
     floor_width = 0.2;
@@ -1493,15 +1486,9 @@ function create_analysis_plots(results, scenarios)
     hold on;
     for i = 1:N
         bar(i - 1.5*floor_width, passive_avg_by_floor(i), floor_width, 'FaceColor', [0.7 0.7 0.7]);
-        if max(fuzzy_avg_by_floor) > 0  % Only plot if we have data
-            bar(i - 0.5*floor_width, fuzzy_avg_by_floor(i), floor_width, 'FaceColor', [1 0.6 0]);
-        end
-        if max(rl_avg_by_floor) > 0  % Only plot if we have data
-            bar(i + 0.5*floor_width, rl_avg_by_floor(i), floor_width, 'FaceColor', [0.3 0.5 0.8]);
-        end
-        if max(rl_cl_avg_by_floor) > 0  % Only plot if we have data
-            bar(i + 1.5*floor_width, rl_cl_avg_by_floor(i), floor_width, 'FaceColor', [0.2 0.8 0.2]);
-        end
+        bar(i - 0.5*floor_width, fuzzy_avg_by_floor(i), floor_width, 'FaceColor', [1 0.6 0]);
+        bar(i + 0.5*floor_width, rl_avg_by_floor(i), floor_width, 'FaceColor', [0.3 0.5 0.8]);
+        bar(i + 1.5*floor_width, rl_cl_avg_by_floor(i), floor_width, 'FaceColor', [0.2 0.8 0.2]);
     end
     hold off;
 
@@ -1509,13 +1496,7 @@ function create_analysis_plots(results, scenarios)
     xlabel('Floor Number');
     ylabel('Average Peak Displacement (cm)');
     title('Floor-by-Floor Displacement (Avg All Scenarios)');
-
-    % Only show legend entries for controllers with data
-    legend_labels = {'Passive'};
-    if max(fuzzy_avg_by_floor) > 0, legend_labels{end+1} = 'Fuzzy'; end
-    if max(rl_avg_by_floor) > 0, legend_labels{end+1} = 'RL Base'; end
-    if max(rl_cl_avg_by_floor) > 0, legend_labels{end+1} = 'RL CL'; end
-    legend(legend_labels, 'Location', 'northeast');
+    legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'northeast');
     grid on;
 
     sgtitle('4-Way TMD Controller - Comprehensive Analysis', 'FontSize', 14, 'FontWeight', 'bold');

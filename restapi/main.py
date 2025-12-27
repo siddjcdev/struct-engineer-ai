@@ -300,6 +300,8 @@ async def simulate_fuzzy(request: FuzzySimulationRequest):
             mean_force=metrics['mean_force'],
             peak_force_kN=metrics['peak_force_kN'],
             mean_force_kN=metrics['mean_force_kN'],
+            peak_disp_by_floor=metrics.get('peak_disp_by_floor', []),
+            rms_roof_accel=metrics.get('rms_roof_accel', 0.0),
             simulation_time_ms=elapsed
         )
 
@@ -511,6 +513,8 @@ async def simulate_rl(request: RLSimulationRequest):
             mean_force=metrics['mean_force'],
             peak_force_kN=metrics['peak_force_kN'],
             mean_force_kN=metrics['mean_force_kN'],
+            peak_disp_by_floor=metrics.get('peak_disp_by_floor', []),
+            rms_roof_accel=metrics.get('rms_roof_accel', 0.0),
             simulation_time_ms=elapsed
         )
 
@@ -720,6 +724,8 @@ async def simulate(request: RLCLSimulationRequest):
             mean_force=metrics['mean_force'],
             peak_force_kN=metrics['peak_force_kN'],
             mean_force_kN=metrics['mean_force_kN'],
+            peak_disp_by_floor=metrics.get('peak_disp_by_floor', []),
+            rms_roof_accel=metrics.get('rms_roof_accel', 0.0),
             simulation_time_ms=elapsed
         )
 

@@ -649,6 +649,8 @@ class FuzzySimulationResponse(BaseModel):
     mean_force: float
     peak_force_kN: float
     mean_force_kN: float
+    peak_disp_by_floor: List[float] = Field(default=[], description="Peak displacement at each floor (m)")
+    rms_roof_accel: float = Field(default=0.0, description="RMS roof acceleration (m/s²)")
     model: str = "Fuzzy Logic Controller"
     simulation_time_ms: float
 

@@ -266,6 +266,8 @@ class RLCLSimulationResponse(BaseModel):
     mean_force: float = Field(..., description="Mean absolute control force (N)")
     peak_force_kN: float = Field(..., description="Peak control force (kN)")
     mean_force_kN: float = Field(..., description="Mean absolute control force (kN)")
+    peak_disp_by_floor: List[float] = Field(default=[], description="Peak displacement at each floor (m)")
+    rms_roof_accel: float = Field(default=0.0, description="RMS roof acceleration (m/s²)")
 
     # Metadata
     model: str = "Perfect RL (Champion)"
