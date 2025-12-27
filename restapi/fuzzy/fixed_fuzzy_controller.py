@@ -496,9 +496,13 @@ class FixedFuzzyTMDController:
 
         # Pre-allocate tracking arrays (much faster than lists!)
         n_steps = len(earthquake_data)
-        displacement_history = np.zeros(n_steps)
+        displacement_history = np.zeros(n_steps)  # Roof displacement only
         force_history = np.zeros(n_steps)
         drift_history = np.zeros((n_steps, n_floors))
+
+        # Additional tracking for analysis plots
+        peak_disp_by_floor = np.zeros(n_floors)  # Track peak displacement at each floor
+        roof_accel_history = np.zeros(n_steps)   # Track roof acceleration
 
         # Pre-allocate earthquake force vector base (avoid repeated concatenation)
         eq_force_base = np.concatenate([np.ones(n_floors), [0]])
@@ -545,6 +549,11 @@ class FixedFuzzyTMDController:
 
             # Track metrics (optimized - direct array assignment)
             displacement_history[step] = displacement[roof_idx]
+            roof_accel_history[step] = acceleration[roof_idx]
+
+            # Update peak displacement for each floor
+            for floor in range(n_floors):
+                peak_disp_by_floor[floor] = max(peak_disp_by_floor[floor], abs(displacement[floor]))
 
             # Compute interstory drifts (vectorized where possible)
             drift_history[step, 0] = abs(displacement[0])
@@ -571,6 +580,9 @@ class FixedFuzzyTMDController:
         peak_force = np.max(np.abs(force_history))
         mean_force = np.mean(np.abs(force_history))
 
+        # 6. RMS roof acceleration
+        rms_roof_accel = np.sqrt(np.mean(roof_accel_history**2))
+
         return {
             'rms_roof_displacement': float(rms_roof),
             'peak_roof_displacement': float(peak_roof),
@@ -582,7 +594,9 @@ class FixedFuzzyTMDController:
             'mean_force_kN': float(mean_force / 1000),
             'forces': force_history.tolist(),
             'forces_N': force_history.tolist(),
-            'forces_kN': (force_history / 1000).tolist()
+            'forces_kN': (force_history / 1000).tolist(),
+            'peak_disp_by_floor': peak_disp_by_floor.tolist(),  # NEW: Peak displacement at each floor
+            'rms_roof_accel': float(rms_roof_accel)             # NEW: RMS roof acceleration
         }
 
     def get_stats(self):
