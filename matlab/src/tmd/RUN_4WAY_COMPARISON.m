@@ -1224,10 +1224,10 @@ function create_analysis_plots(results, scenarios)
     base_idx = find(valid & ~startsWith(scenario_labels, 'Mod_'));
     base_labels = scenario_labels(base_idx);
 
-    fig = figure('Position', [100 100 1800 1000], 'Color', 'w');
+    fig = figure('Position', [100 100 1800 1200], 'Color', 'w');
 
     % Plot 1: Main Datasets' Distribution of Acceleration (time series for 4 base scenarios)
-    subplot(2, 3, 1);
+    subplot(3, 3, 1);
     colors = {[0.2 0.4 0.8], [1 0.6 0], [0.8 0.2 0.2], [0.6 0.2 0.6]};
     hold on;
     for i = 1:length(base_idx)
@@ -1244,7 +1244,7 @@ function create_analysis_plots(results, scenarios)
     grid on;
 
     % Plot 2: PGA of All Scenarios
-    subplot(2, 3, 2);
+    subplot(3, 3, 2);
     x = 1:n_scenarios;
     pga_values = results.earthquake.PGA(valid);
     bar(x, pga_values, 'FaceColor', [0.4 0.6 0.8]);
@@ -1255,7 +1255,7 @@ function create_analysis_plots(results, scenarios)
     grid on;
 
     % Plot 3: Peak Displacement By Story (for 4 base scenarios)
-    subplot(2, 3, 3);
+    subplot(3, 3, 3);
     N = size(results.Passive.peak_disp_by_floor, 1);  % Number of floors
     floors = 1:N;
     hold on;
@@ -1276,8 +1276,8 @@ function create_analysis_plots(results, scenarios)
     legend('Location', 'best');
     grid on;
 
-    % Plot 4: Maximum RMS Displacement Reduction
-    subplot(2, 3, 4);
+    % Plot 4: RMS Displacement Reduction
+    subplot(3, 3, 4);
     width = 0.25;
     x = 1:n_scenarios;
 
@@ -1300,24 +1300,132 @@ function create_analysis_plots(results, scenarios)
     grid on;
     yline(0, 'k--');
 
-    % Plot 5: Max RMS Roof Acceleration (for all scenarios)
-    subplot(2, 3, 5);
-    bar(x - 1.5*width, results.Passive.rms_roof_accel(valid), width, 'FaceColor', [0.7 0.7 0.7]);
+    % Plot 5: Performance vs Earthquake Magnitude (NEW)
+    subplot(3, 3, 5);
+    % Extract magnitude data from base scenarios
+    magnitudes = [4.5, 5.7, 7.4, 8.4];  % M4.5, M5.7, M7.4, M8.4
+
+    % Get peak displacements for base scenarios only
+    base_global_idx = zeros(length(base_idx), 1);
+    for i = 1:length(base_idx)
+        base_global_idx(i) = find(strcmp(scenarios(:,1), base_labels{i}));
+    end
+
+    passive_peaks = results.Passive.peak_roof(base_global_idx) * 100;  % Convert to cm
+    fuzzy_peaks = results.Fuzzy.peak_roof(base_global_idx) * 100;
+    rl_peaks = results.RL_Base.peak_roof(base_global_idx) * 100;
+    rl_cl_peaks = results.RL_CL.peak_roof(base_global_idx) * 100;
+
+    plot(magnitudes, passive_peaks, 'o-', 'Color', [0.7 0.7 0.7], 'LineWidth', 2.5, 'MarkerSize', 8, 'MarkerFaceColor', [0.7 0.7 0.7]);
     hold on;
-    bar(x - 0.5*width, results.Fuzzy.rms_roof_accel(valid), width, 'FaceColor', [1 0.6 0]);
-    bar(x + 0.5*width, results.RL_Base.rms_roof_accel(valid), width, 'FaceColor', [0.3 0.5 0.8]);
-    bar(x + 1.5*width, results.RL_CL.rms_roof_accel(valid), width, 'FaceColor', [0.2 0.8 0.2]);
+    plot(magnitudes, fuzzy_peaks, 's-', 'Color', [1 0.6 0], 'LineWidth', 2.5, 'MarkerSize', 8, 'MarkerFaceColor', [1 0.6 0]);
+    plot(magnitudes, rl_peaks, 'd-', 'Color', [0.3 0.5 0.8], 'LineWidth', 2.5, 'MarkerSize', 8, 'MarkerFaceColor', [0.3 0.5 0.8]);
+    plot(magnitudes, rl_cl_peaks, '^-', 'Color', [0.2 0.8 0.2], 'LineWidth', 2.5, 'MarkerSize', 8, 'MarkerFaceColor', [0.2 0.8 0.2]);
+    hold off;
+    xlabel('Earthquake Magnitude (M)');
+    ylabel('Peak Roof Displacement (cm)');
+    title('Scalability: Performance vs Magnitude');
+    legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'northwest');
+    grid on;
+
+    % Plot 6: Controller Winner Matrix (NEW)
+    subplot(3, 3, 6);
+    % Determine winner for each scenario based on peak roof displacement
+    winner_matrix = zeros(n_scenarios, 1);
+    for i = 1:n_scenarios
+        scenario_idx_global = find(valid);
+        scenario_idx_global = scenario_idx_global(i);
+
+        peaks = [results.Fuzzy.peak_roof(scenario_idx_global), ...
+                 results.RL_Base.peak_roof(scenario_idx_global), ...
+                 results.RL_CL.peak_roof(scenario_idx_global)];
+        [~, winner_matrix(i)] = min(peaks);
+    end
+
+    % Create color-coded bar chart (1=Fuzzy, 2=RL Base, 3=RL CL)
+    winner_colors = [[1 0.6 0]; [0.3 0.5 0.8]; [0.2 0.8 0.2]];
+    bar_colors = winner_colors(winner_matrix, :);
+
+    for i = 1:n_scenarios
+        bar(i, 1, 'FaceColor', bar_colors(i, :), 'EdgeColor', 'k', 'LineWidth', 1);
+        hold on;
+    end
     hold off;
 
     set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
     xtickangle(45);
-    ylabel('RMS Roof Acceleration (m/s²)');
-    title('RMS Roof Acceleration - All Controllers');
+    ylim([0 1.2]);
+    set(gca, 'YTick', []);
+    title('Best Controller per Scenario');
+
+    % Add legend manually
+    text(0.5, 1.1, '■ Fuzzy', 'Color', [1 0.6 0], 'FontWeight', 'bold', 'FontSize', 9);
+    text(0.5, 1.05, '■ RL Base', 'Color', [0.3 0.5 0.8], 'FontWeight', 'bold', 'FontSize', 9);
+    text(0.5, 1.0, '■ RL CL', 'Color', [0.2 0.8 0.2], 'FontWeight', 'bold', 'FontSize', 9);
+
+    % Plot 7: Absolute Displacement Reduction (NEW)
+    subplot(3, 3, 7);
+    % Calculate absolute reduction in cm
+    fuzzy_abs_reduction = (results.Passive.peak_roof(valid) - results.Fuzzy.peak_roof(valid)) * 100;
+    rl_abs_reduction = (results.Passive.peak_roof(valid) - results.RL_Base.peak_roof(valid)) * 100;
+    rl_cl_abs_reduction = (results.Passive.peak_roof(valid) - results.RL_CL.peak_roof(valid)) * 100;
+
+    bar(x - width, fuzzy_abs_reduction, width, 'FaceColor', [1 0.6 0]);
+    hold on;
+    bar(x, rl_abs_reduction, width, 'FaceColor', [0.3 0.5 0.8]);
+    bar(x + width, rl_cl_abs_reduction, width, 'FaceColor', [0.2 0.8 0.2]);
+    hold off;
+
+    set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
+    xtickangle(45);
+    ylabel('Displacement Reduced (cm)');
+    title('Absolute Displacement Reduction vs Passive');
+    legend({'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
+    grid on;
+    yline(0, 'k--');
+
+    % Plot 8: Safety Margin Analysis (NEW)
+    subplot(3, 3, 8);
+    % Typical building code drift limit: 2% of story height (0.02)
+    drift_limit = 0.02;
+
+    % Calculate max drift ratio for each controller
+    passive_drift_ratio = results.Passive.max_drift(valid) / 3.0;  % Assuming 3m story height
+    fuzzy_drift_ratio = results.Fuzzy.max_drift(valid) / 3.0;
+    rl_drift_ratio = results.RL_Base.max_drift(valid) / 3.0;
+    rl_cl_drift_ratio = results.RL_CL.max_drift(valid) / 3.0;
+
+    % Calculate safety margin (how far from failure)
+    passive_margin = (drift_limit - passive_drift_ratio) / drift_limit * 100;
+    fuzzy_margin = (drift_limit - fuzzy_drift_ratio) / drift_limit * 100;
+    rl_margin = (drift_limit - rl_drift_ratio) / drift_limit * 100;
+    rl_cl_margin = (drift_limit - rl_cl_drift_ratio) / drift_limit * 100;
+
+    bar(x - 1.5*width, passive_margin, width, 'FaceColor', [0.7 0.7 0.7]);
+    hold on;
+    bar(x - 0.5*width, fuzzy_margin, width, 'FaceColor', [1 0.6 0]);
+    bar(x + 0.5*width, rl_margin, width, 'FaceColor', [0.3 0.5 0.8]);
+    bar(x + 1.5*width, rl_cl_margin, width, 'FaceColor', [0.2 0.8 0.2]);
+
+    % Add color zones: green (safe >50%), yellow (warning 0-50%), red (failure <0%)
+    fill([0.5, n_scenarios+0.5, n_scenarios+0.5, 0.5], [50, 50, 100, 100], ...
+        [0.8 1 0.8], 'EdgeColor', 'none', 'FaceAlpha', 0.3);
+    fill([0.5, n_scenarios+0.5, n_scenarios+0.5, 0.5], [0, 0, 50, 50], ...
+        [1 1 0.7], 'EdgeColor', 'none', 'FaceAlpha', 0.3);
+    fill([0.5, n_scenarios+0.5, n_scenarios+0.5, 0.5], [-100, -100, 0, 0], ...
+        [1 0.8 0.8], 'EdgeColor', 'none', 'FaceAlpha', 0.3);
+    hold off;
+
+    set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
+    xtickangle(45);
+    ylabel('Safety Margin (%)');
+    title('Safety Margin Analysis (2% Drift Limit)');
     legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
     grid on;
+    yline(0, 'r--', 'LineWidth', 2);
 
-    % Plot 6: Improvement Summary Table (text visualization)
-    subplot(2, 3, 6);
+    % Plot 9: Improvement Summary Table (text visualization)
+    subplot(3, 3, 9);
     axis off;
 
     % Calculate average improvements
@@ -1338,14 +1446,19 @@ function create_analysis_plots(results, scenarios)
     text(0.1, 0.6, sprintf('RL CL: Peak %.1f%%, RMS %.1f%%, DCR %.1f%%', ...
         avg_peak_imp(3), avg_rms_imp(3), avg_dcr_imp(3)), 'FontSize', 10, 'Color', [0.2 0.8 0.2]);
 
-    text(0.1, 0.4, 'Key Findings:', 'FontSize', 11, 'FontWeight', 'bold');
+    text(0.1, 0.45, 'Key Findings:', 'FontSize', 11, 'FontWeight', 'bold');
     [~, best_idx] = max(avg_peak_imp);
     best_names = {'Fuzzy', 'RL Base', 'RL CL'};
-    text(0.1, 0.3, sprintf('• Best Peak Reduction: %s', best_names{best_idx}), 'FontSize', 9);
-    text(0.1, 0.2, sprintf('• Scenarios Tested: %d', n_scenarios), 'FontSize', 9);
-    text(0.1, 0.1, sprintf('• Building: %d floors with soft story', N), 'FontSize', 9);
+    text(0.1, 0.35, sprintf('• Best Peak Reduction: %s', best_names{best_idx}), 'FontSize', 9);
+    text(0.1, 0.25, sprintf('• Scenarios Tested: %d', n_scenarios), 'FontSize', 9);
+    text(0.1, 0.15, sprintf('• Building: %d floors with soft story', N), 'FontSize', 9);
 
-    sgtitle('4-Way TMD Controller - Additional Analysis', 'FontSize', 14, 'FontWeight', 'bold');
+    % Add absolute reduction info
+    avg_abs_reduction = [mean(fuzzy_abs_reduction), mean(rl_abs_reduction), mean(rl_cl_abs_reduction)];
+    [max_reduction, max_idx] = max(avg_abs_reduction);
+    text(0.1, 0.05, sprintf('• Max Avg Reduction: %.1f cm (%s)', max_reduction, best_names{max_idx}), 'FontSize', 9);
+
+    sgtitle('4-Way TMD Controller - Comprehensive Analysis', 'FontSize', 14, 'FontWeight', 'bold');
 
     saveas(fig, '4way_analysis_plots.png');
 end
