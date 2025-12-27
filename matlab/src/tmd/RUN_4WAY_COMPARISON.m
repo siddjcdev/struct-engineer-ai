@@ -1326,7 +1326,7 @@ function create_analysis_plots(results, scenarios)
     title('Peak Ground Acceleration - All Scenarios');
     grid on;
 
-    % Plot 3: Peak Displacement Profile (Each Controller Averaged Across All 4 Scenarios)
+    % Plot 3: Peak Displacement Profile (Each Scenario Averaged Across All Controllers)
     subplot(3, 3, 3);
     N = size(results.Passive.peak_disp_by_floor, 1);  % Number of floors
     floors = 1:N;
@@ -1337,25 +1337,26 @@ function create_analysis_plots(results, scenarios)
         base_global_idx(i) = find(strcmp(scenarios(:,1), base_labels{i}));
     end
 
-    % Average each controller across all 4 base scenarios
-    passive_avg = mean(results.Passive.peak_disp_by_floor(:, base_global_idx), 2) * 100;  % cm
-    fuzzy_avg = mean(results.Fuzzy.peak_disp_by_floor(:, base_global_idx), 2) * 100;
-    rl_avg = mean(results.RL_Base.peak_disp_by_floor(:, base_global_idx), 2) * 100;
-    rl_cl_avg = mean(results.RL_CL.peak_disp_by_floor(:, base_global_idx), 2) * 100;
+    % Average all controllers for each scenario
+    colors = {[0.8 0.2 0.2], [1 0.6 0], [0.3 0.5 0.8], [0.5 0.2 0.6]};  % Different color per scenario
+    markers = {'o', 's', 'd', '^'};
 
     hold on;
-    plot(passive_avg, floors, 'o-', 'Color', [0.7 0.7 0.7], 'LineWidth', 2, ...
-        'MarkerSize', 6, 'MarkerFaceColor', [0.7 0.7 0.7], 'DisplayName', 'Passive');
-    plot(fuzzy_avg, floors, 's-', 'Color', [1 0.6 0], 'LineWidth', 2, ...
-        'MarkerSize', 6, 'MarkerFaceColor', [1 0.6 0], 'DisplayName', 'Fuzzy');
-    plot(rl_avg, floors, 'd-', 'Color', [0.3 0.5 0.8], 'LineWidth', 2, ...
-        'MarkerSize', 6, 'MarkerFaceColor', [0.3 0.5 0.8], 'DisplayName', 'RL Base');
-    plot(rl_cl_avg, floors, '^-', 'Color', [0.2 0.8 0.2], 'LineWidth', 2, ...
-        'MarkerSize', 6, 'MarkerFaceColor', [0.2 0.8 0.2], 'DisplayName', 'RL CL');
+    for i = 1:length(base_global_idx)
+        idx = base_global_idx(i);
+        % Average across all 4 controllers for this scenario
+        scenario_avg = mean([results.Passive.peak_disp_by_floor(:, idx), ...
+                            results.Fuzzy.peak_disp_by_floor(:, idx), ...
+                            results.RL_Base.peak_disp_by_floor(:, idx), ...
+                            results.RL_CL.peak_disp_by_floor(:, idx)], 2) * 100;  % cm
+
+        plot(scenario_avg, floors, [markers{i} '-'], 'Color', colors{i}, 'LineWidth', 2, ...
+            'MarkerSize', 6, 'MarkerFaceColor', colors{i}, 'DisplayName', base_labels{i});
+    end
     hold off;
     ylabel('Floor Number');
     xlabel('Peak Displacement (cm)');
-    title('Peak Displacement Profile (Avg All Scenarios)');
+    title('Peak Displacement Profile (Avg All Controllers)');
     legend('Location', 'best');
     grid on;
 
