@@ -282,6 +282,17 @@ function results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt
     results.earthquake.time = cell(n_scenarios, 1);
     results.earthquake.accel = cell(n_scenarios, 1);
 
+    % Store time histories for representative scenario (PEER_Moderate)
+    results.time_history = struct();
+    for ctrl = controllers
+        results.time_history.(ctrl{1}) = struct();
+        results.time_history.(ctrl{1}).tmd_disp = [];
+        results.time_history.(ctrl{1}).force = [];
+        results.time_history.(ctrl{1}).time = [];
+        results.time_history.(ctrl{1}).time_max_force = 0;
+        results.time_history.(ctrl{1}).time_max_disp = 0;
+    end
+
     % Main test loop
     fprintf('🚀 Starting 4-way comparison...\n\n');
 
@@ -403,6 +414,40 @@ function results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt
         results.RL_CL.time(scenario_idx) = toc;
         fprintf('Peak: %.2f cm, Force: %.1f kN (%.2f s)\n\n', ...
             rl_cl_results.peak_roof*100, rl_cl_results.mean_force, results.RL_CL.time(scenario_idx));
+
+        % Store time histories for representative scenario (PEER_Moderate)
+        if strcmp(scenario_name, 'PEER_Moderate')
+            fprintf('  📊 Storing time histories for plots...\n');
+            % Passive time history
+            results.time_history.Passive.tmd_disp = passive_results.tmd_disp;
+            results.time_history.Passive.force = passive_results.force;
+            results.time_history.Passive.time = t;
+            results.time_history.Passive.time_max_disp = passive_results.time_max_disp;
+            results.time_history.Passive.time_max_force = passive_results.time_max_force;
+
+            % Active controllers - check if time history data available from API
+            if isfield(fuzzy_results, 'tmd_disp') && isfield(fuzzy_results, 'force')
+                results.time_history.Fuzzy.tmd_disp = fuzzy_results.tmd_disp;
+                results.time_history.Fuzzy.force = fuzzy_results.force;
+                results.time_history.Fuzzy.time = t;
+                results.time_history.Fuzzy.time_max_disp = fuzzy_results.time_max_disp;
+                results.time_history.Fuzzy.time_max_force = fuzzy_results.time_max_force;
+            end
+            if isfield(rl_results, 'tmd_disp') && isfield(rl_results, 'force')
+                results.time_history.RL_Base.tmd_disp = rl_results.tmd_disp;
+                results.time_history.RL_Base.force = rl_results.force;
+                results.time_history.RL_Base.time = t;
+                results.time_history.RL_Base.time_max_disp = rl_results.time_max_disp;
+                results.time_history.RL_Base.time_max_force = rl_results.time_max_force;
+            end
+            if isfield(rl_cl_results, 'tmd_disp') && isfield(rl_cl_results, 'force')
+                results.time_history.RL_CL.tmd_disp = rl_cl_results.tmd_disp;
+                results.time_history.RL_CL.force = rl_cl_results.force;
+                results.time_history.RL_CL.time = t;
+                results.time_history.RL_CL.time_max_disp = rl_cl_results.time_max_disp;
+                results.time_history.RL_CL.time_max_force = rl_cl_results.time_max_force;
+            end
+        end
     end
 
     % Calculate improvements
@@ -511,6 +556,13 @@ function [passive_results, x_passive, v_passive, M_passive, K_passive, C_passive
     % Additional metrics for analysis plots
     passive_results.peak_disp_by_floor = max(abs(x_passive(1:N, :)), [], 2);  % Peak displacement at each floor
     passive_results.rms_roof_accel = rms(a_passive(N, :));  % RMS roof acceleration
+
+    % Time history data
+    passive_results.tmd_disp = x_passive(N+1, :)';  % TMD displacement
+    passive_results.force = zeros(Nt, 1);  % Passive has zero control force
+    [~, max_disp_idx] = max(abs(roof_passive));
+    passive_results.time_max_disp = t(max_disp_idx);
+    passive_results.time_max_force = 0;  % No active force for passive
 end
 
 function active_results = test_active_controller(x_passive, v_passive, M_passive, K_passive, C_passive,...
@@ -557,13 +609,21 @@ function active_results = test_active_controller(x_passive, v_passive, M_passive
     % Extract results
     roof_active = x_active(N, :);
     drift_active = compute_interstory_drifts(x_active(1:N, :));
-    
+
     active_results.peak_roof = max(abs(roof_active));
     active_results.max_drift = max(abs(drift_active(:)));
     active_results.DCR = compute_DCR(drift_active);
     active_results.rms_roof = rms(roof_active);
     active_results.peak_force = max(abs(forces_kN));
     active_results.mean_force = mean(abs(forces_kN));
+
+    % Time history data
+    active_results.tmd_disp = x_active(N+1, :)';  % TMD displacement
+    active_results.force = forces_kN;  % Control force in kN
+    [~, max_disp_idx] = max(abs(roof_active));
+    [~, max_force_idx] = max(abs(forces_kN));
+    active_results.time_max_disp = t(max_disp_idx);
+    active_results.time_max_force = t(max_force_idx);
 end
 
 function [floor, freq, damping] = optimize_passive_tmd(M, K, C, F, t, om1, tmd_mass)
@@ -1226,22 +1286,34 @@ function create_analysis_plots(results, scenarios)
 
     fig = figure('Position', [100 100 1800 1200], 'Color', 'w');
 
-    % Plot 1: Main Datasets' Distribution of Acceleration (time series for 4 base scenarios)
+    % Plot 1: Main Datasets' Distribution of Acceleration (2x2 subplots for clarity)
     subplot(3, 3, 1);
     colors = {[0.2 0.4 0.8], [1 0.6 0], [0.8 0.2 0.2], [0.6 0.2 0.6]};
-    hold on;
-    for i = 1:length(base_idx)
+    magnitudes = {'M4.5', 'M5.7', 'M7.4', 'M8.4'};
+
+    % Create 2x2 grid within subplot for each magnitude
+    for i = 1:min(4, length(base_idx))
         global_idx = find(strcmp(scenarios(:,1), base_labels{i}));
         t = results.earthquake.time{global_idx};
         ag = results.earthquake.accel{global_idx};
-        plot(t, ag, 'Color', colors{i}, 'LineWidth', 1.5, 'DisplayName', base_labels{i});
+
+        subplot(3, 3, 1);
+        hold on;
+        if i == 1 || i == 2
+            % Plot smaller magnitude earthquakes with thicker lines
+            plot(t, ag, 'Color', colors{i}, 'LineWidth', 2.0, 'DisplayName', magnitudes{i});
+        else
+            % Plot larger magnitude earthquakes with thinner, semi-transparent lines
+            plot(t, ag, 'Color', [colors{i} 0.6], 'LineWidth', 1.0, 'DisplayName', magnitudes{i});
+        end
     end
     hold off;
     xlabel('Time (s)');
     ylabel('Acceleration (m/s²)');
     title('Earthquake Ground Motion Time Series');
-    legend('Location', 'best');
+    legend('Location', 'northeast', 'FontSize', 8);
     grid on;
+    ylim([-12 12]);  % Fixed scale for clarity
 
     % Plot 2: PGA of All Scenarios
     subplot(3, 3, 2);
@@ -1332,40 +1404,36 @@ function create_analysis_plots(results, scenarios)
     legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'northwest');
     grid on;
 
-    % Plot 6: Controller Winner Matrix
+    % Plot 6: TMD Mass Displacement Time History (PEER_Moderate scenario)
     subplot(3, 3, 6);
-    % Determine winner for each scenario based on peak roof displacement
-    winner_matrix = zeros(n_scenarios, 1);
-    for i = 1:n_scenarios
-        scenario_idx_global = find(valid);
-        scenario_idx_global = scenario_idx_global(i);
+    if ~isempty(results.time_history.Passive.tmd_disp)
+        t_hist = results.time_history.Passive.time;
 
-        peaks = [results.Fuzzy.peak_roof(scenario_idx_global), ...
-                 results.RL_Base.peak_roof(scenario_idx_global), ...
-                 results.RL_CL.peak_roof(scenario_idx_global)];
-        [~, winner_matrix(i)] = min(peaks);
-    end
-
-    % Create color-coded bar chart (1=Fuzzy, 2=RL Base, 3=RL CL)
-    winner_colors = [[1 0.6 0]; [0.3 0.5 0.8]; [0.2 0.8 0.2]];
-    bar_colors = winner_colors(winner_matrix, :);
-
-    for i = 1:n_scenarios
-        bar(i, 1, 'FaceColor', bar_colors(i, :), 'EdgeColor', 'k', 'LineWidth', 1);
+        % Plot all controllers
+        plot(t_hist, results.time_history.Passive.tmd_disp * 100, '-', 'Color', [0.7 0.7 0.7], 'LineWidth', 2, 'DisplayName', 'Passive');
         hold on;
+
+        % Check if active controller data available
+        if ~isempty(results.time_history.Fuzzy.tmd_disp)
+            plot(t_hist, results.time_history.Fuzzy.tmd_disp * 100, '-', 'Color', [1 0.6 0], 'LineWidth', 1.5, 'DisplayName', 'Fuzzy');
+        end
+        if ~isempty(results.time_history.RL_Base.tmd_disp)
+            plot(t_hist, results.time_history.RL_Base.tmd_disp * 100, '-', 'Color', [0.3 0.5 0.8], 'LineWidth', 1.5, 'DisplayName', 'RL Base');
+        end
+        if ~isempty(results.time_history.RL_CL.tmd_disp)
+            plot(t_hist, results.time_history.RL_CL.tmd_disp * 100, '-', 'Color', [0.2 0.8 0.2], 'LineWidth', 1.5, 'DisplayName', 'RL CL');
+        end
+        hold off;
+
+        xlabel('Time (s)');
+        ylabel('TMD Displacement (cm)');
+        title('TMD Mass Motion (PEER\_Moderate)');
+        legend('Location', 'best');
+        grid on;
+    else
+        text(0.5, 0.5, 'Time history data not available', 'HorizontalAlignment', 'center');
+        axis off;
     end
-    hold off;
-
-    set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
-    xtickangle(45);
-    ylim([0 1.2]);
-    set(gca, 'YTick', []);
-    title('Best Controller per Scenario');
-
-    % Add legend manually
-    text(0.5, 1.1, '■ Fuzzy', 'Color', [1 0.6 0], 'FontWeight', 'bold', 'FontSize', 9);
-    text(0.5, 1.05, '■ RL Base', 'Color', [0.3 0.5 0.8], 'FontWeight', 'bold', 'FontSize', 9);
-    text(0.5, 1.0, '■ RL CL', 'Color', [0.2 0.8 0.2], 'FontWeight', 'bold', 'FontSize', 9);
 
     % Plot 7: Absolute Displacement Reduction
     subplot(3, 3, 7);
@@ -1388,79 +1456,92 @@ function create_analysis_plots(results, scenarios)
     grid on;
     yline(0, 'k--');
 
-    % Plot 8: Safety Margin Analysis
+    % Plot 8: Story-by-Story Maximum Drift Comparison
     subplot(3, 3, 8);
-    % Typical building code drift limit: 2% of story height (0.02)
-    drift_limit = 0.02;
+    N = size(results.Passive.peak_disp_by_floor, 1);  % Number of floors
 
-    % Calculate max drift ratio for each controller
-    passive_drift_ratio = results.Passive.max_drift(valid) / 3.0;  % Assuming 3m story height
-    fuzzy_drift_ratio = results.Fuzzy.max_drift(valid) / 3.0;
-    rl_drift_ratio = results.RL_Base.max_drift(valid) / 3.0;
-    rl_cl_drift_ratio = results.RL_CL.max_drift(valid) / 3.0;
+    % Average peak displacement across all valid scenarios
+    passive_avg_by_floor = mean(results.Passive.peak_disp_by_floor(:, valid), 2) * 100;  % cm
+    fuzzy_avg_by_floor = mean(results.Fuzzy.peak_disp_by_floor(:, valid), 2) * 100;
+    rl_avg_by_floor = mean(results.RL_Base.peak_disp_by_floor(:, valid), 2) * 100;
+    rl_cl_avg_by_floor = mean(results.RL_CL.peak_disp_by_floor(:, valid), 2) * 100;
 
-    % Calculate safety margin (how far from failure)
-    passive_margin = (drift_limit - passive_drift_ratio) / drift_limit * 100;
-    fuzzy_margin = (drift_limit - fuzzy_drift_ratio) / drift_limit * 100;
-    rl_margin = (drift_limit - rl_drift_ratio) / drift_limit * 100;
-    rl_cl_margin = (drift_limit - rl_cl_drift_ratio) / drift_limit * 100;
+    floors = 1:N;
+    floor_width = 0.2;
 
-    bar(x - 1.5*width, passive_margin, width, 'FaceColor', [0.7 0.7 0.7]);
     hold on;
-    bar(x - 0.5*width, fuzzy_margin, width, 'FaceColor', [1 0.6 0]);
-    bar(x + 0.5*width, rl_margin, width, 'FaceColor', [0.3 0.5 0.8]);
-    bar(x + 1.5*width, rl_cl_margin, width, 'FaceColor', [0.2 0.8 0.2]);
-
-    % Add color zones: green (safe >50%), yellow (warning 0-50%), red (failure <0%)
-    fill([0.5, n_scenarios+0.5, n_scenarios+0.5, 0.5], [50, 50, 100, 100], ...
-        [0.8 1 0.8], 'EdgeColor', 'none', 'FaceAlpha', 0.3);
-    fill([0.5, n_scenarios+0.5, n_scenarios+0.5, 0.5], [0, 0, 50, 50], ...
-        [1 1 0.7], 'EdgeColor', 'none', 'FaceAlpha', 0.3);
-    fill([0.5, n_scenarios+0.5, n_scenarios+0.5, 0.5], [-100, -100, 0, 0], ...
-        [1 0.8 0.8], 'EdgeColor', 'none', 'FaceAlpha', 0.3);
+    for i = 1:N
+        bar(i - 1.5*floor_width, passive_avg_by_floor(i), floor_width, 'FaceColor', [0.7 0.7 0.7]);
+        bar(i - 0.5*floor_width, fuzzy_avg_by_floor(i), floor_width, 'FaceColor', [1 0.6 0]);
+        bar(i + 0.5*floor_width, rl_avg_by_floor(i), floor_width, 'FaceColor', [0.3 0.5 0.8]);
+        bar(i + 1.5*floor_width, rl_cl_avg_by_floor(i), floor_width, 'FaceColor', [0.2 0.8 0.2]);
+    end
     hold off;
 
-    set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
-    xtickangle(45);
-    ylabel('Safety Margin (%)');
-    title('Safety Margin Analysis (2% Drift Limit)');
-    legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
+    set(gca, 'XTick', 1:N, 'XTickLabel', floors);
+    xlabel('Floor Number');
+    ylabel('Average Peak Displacement (cm)');
+    title('Floor-by-Floor Displacement (Avg All Scenarios)');
+    legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'northeast');
     grid on;
-    yline(0, 'r--', 'LineWidth', 2);
 
-    % Plot 9: Improvement Summary Table (text visualization)
+    % Plot 9: Controller Reaction Time Analysis
     subplot(3, 3, 9);
-    axis off;
+    if ~isempty(results.time_history.Passive.tmd_disp)
+        % Get reaction times (time of max force vs time of max displacement)
+        controllers_active = {'Fuzzy', 'RL_Base', 'RL_CL'};
+        time_max_force = [];
+        time_max_disp = [];
+        controller_labels = {};
 
-    % Calculate average improvements
-    avg_peak_imp = [mean(results.Fuzzy.improvement_roof(valid)), ...
-                    mean(results.RL_Base.improvement_roof(valid)), ...
-                    mean(results.RL_CL.improvement_roof(valid))];
-    avg_rms_imp = [mean(fuzzy_rms_reduction), mean(rl_rms_reduction), mean(rl_cl_rms_reduction)];
-    avg_dcr_imp = [mean(results.Fuzzy.improvement_DCR(valid)), ...
-                   mean(results.RL_Base.improvement_DCR(valid)), ...
-                   mean(results.RL_CL.improvement_DCR(valid))];
+        for i = 1:length(controllers_active)
+            ctrl = controllers_active{i};
+            if ~isempty(results.time_history.(ctrl).time_max_force) && ...
+               results.time_history.(ctrl).time_max_force > 0
+                time_max_force = [time_max_force; results.time_history.(ctrl).time_max_force];
+                time_max_disp = [time_max_disp; results.time_history.(ctrl).time_max_disp];
+                controller_labels{end+1} = ctrl;
+            end
+        end
 
-    % Create text table
-    text(0.1, 0.9, 'Average Performance Summary', 'FontSize', 12, 'FontWeight', 'bold');
-    text(0.1, 0.8, sprintf('Fuzzy: Peak %.1f%%, RMS %.1f%%, DCR %.1f%%', ...
-        avg_peak_imp(1), avg_rms_imp(1), avg_dcr_imp(1)), 'FontSize', 10, 'Color', [1 0.6 0]);
-    text(0.1, 0.7, sprintf('RL Base: Peak %.1f%%, RMS %.1f%%, DCR %.1f%%', ...
-        avg_peak_imp(2), avg_rms_imp(2), avg_dcr_imp(2)), 'FontSize', 10, 'Color', [0.3 0.5 0.8]);
-    text(0.1, 0.6, sprintf('RL CL: Peak %.1f%%, RMS %.1f%%, DCR %.1f%%', ...
-        avg_peak_imp(3), avg_rms_imp(3), avg_dcr_imp(3)), 'FontSize', 10, 'Color', [0.2 0.8 0.2]);
+        if ~isempty(time_max_force)
+            % Calculate reaction delay (positive = force peaks after displacement)
+            reaction_delay = time_max_force - time_max_disp;
 
-    text(0.1, 0.45, 'Key Findings:', 'FontSize', 11, 'FontWeight', 'bold');
-    [~, best_idx] = max(avg_peak_imp);
-    best_names = {'Fuzzy', 'RL Base', 'RL CL'};
-    text(0.1, 0.35, sprintf('• Best Peak Reduction: %s', best_names{best_idx}), 'FontSize', 9);
-    text(0.1, 0.25, sprintf('• Scenarios Tested: %d', n_scenarios), 'FontSize', 9);
-    text(0.1, 0.15, sprintf('• Building: %d floors with soft story', N), 'FontSize', 9);
+            % Create grouped bar chart
+            x_pos = 1:length(controller_labels);
+            ctrl_colors = [1 0.6 0; 0.3 0.5 0.8; 0.2 0.8 0.2];
 
-    % Add absolute reduction info
-    avg_abs_reduction = [mean(fuzzy_abs_reduction), mean(rl_abs_reduction), mean(rl_cl_abs_reduction)];
-    [max_reduction, max_idx] = max(avg_abs_reduction);
-    text(0.1, 0.05, sprintf('• Max Avg Reduction: %.1f cm (%s)', max_reduction, best_names{max_idx}), 'FontSize', 9);
+            hold on;
+            for i = 1:length(controller_labels)
+                bar(x_pos(i), reaction_delay(i), 'FaceColor', ctrl_colors(i, :), 'EdgeColor', 'k', 'LineWidth', 1.5);
+            end
+            hold off;
+
+            set(gca, 'XTick', x_pos, 'XTickLabel', strrep(controller_labels, '_', ' '));
+            ylabel('Reaction Delay (s)');
+            title('Control Reaction Time Analysis');
+            grid on;
+            yline(0, 'k--', 'LineWidth', 1.5);
+
+            % Add text annotations
+            for i = 1:length(reaction_delay)
+                if reaction_delay(i) > 0
+                    text(x_pos(i), reaction_delay(i) + 0.1, sprintf('%.2fs late', reaction_delay(i)), ...
+                        'HorizontalAlignment', 'center', 'FontSize', 8);
+                else
+                    text(x_pos(i), reaction_delay(i) - 0.1, sprintf('%.2fs early', abs(reaction_delay(i))), ...
+                        'HorizontalAlignment', 'center', 'FontSize', 8, 'VerticalAlignment', 'top');
+                end
+            end
+        else
+            text(0.5, 0.5, 'No active controller data available', 'HorizontalAlignment', 'center');
+            axis off;
+        end
+    else
+        text(0.5, 0.5, 'Time history data not available', 'HorizontalAlignment', 'center');
+        axis off;
+    end
 
     sgtitle('4-Way TMD Controller - Comprehensive Analysis', 'FontSize', 14, 'FontWeight', 'bold');
 
