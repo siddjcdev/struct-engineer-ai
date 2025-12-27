@@ -1415,36 +1415,29 @@ function create_analysis_plots(results, scenarios)
     legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'northwest');
     grid on;
 
-    % Plot 6: TMD Mass Displacement Time History (PEER_Insane scenario)
+    % Plot 6: Peak Force Comparison Across Scenarios
     subplot(3, 3, 6);
-    if ~isempty(results.time_history.Passive.tmd_disp)
-        t_hist = results.time_history.Passive.time;
 
-        % Plot all controllers
-        plot(t_hist, results.time_history.Passive.tmd_disp * 100, '-', 'Color', [0.7 0.7 0.7], 'LineWidth', 2, 'DisplayName', 'Passive');
-        hold on;
+    % Extract peak forces for valid scenarios
+    fuzzy_peak_forces = results.Fuzzy.peak_force(valid);
+    rl_peak_forces = results.RL_Base.peak_force(valid);
+    rl_cl_peak_forces = results.RL_CL.peak_force(valid);
 
-        % Check if active controller data available
-        if ~isempty(results.time_history.Fuzzy.tmd_disp)
-            plot(t_hist, results.time_history.Fuzzy.tmd_disp * 100, '-', 'Color', [1 0.6 0], 'LineWidth', 1.5, 'DisplayName', 'Fuzzy');
-        end
-        if ~isempty(results.time_history.RL_Base.tmd_disp)
-            plot(t_hist, results.time_history.RL_Base.tmd_disp * 100, '-', 'Color', [0.3 0.5 0.8], 'LineWidth', 1.5, 'DisplayName', 'RL Base');
-        end
-        if ~isempty(results.time_history.RL_CL.tmd_disp)
-            plot(t_hist, results.time_history.RL_CL.tmd_disp * 100, '-', 'Color', [0.2 0.8 0.2], 'LineWidth', 1.5, 'DisplayName', 'RL CL');
-        end
-        hold off;
+    % Create grouped bar chart
+    force_data = [fuzzy_peak_forces'; rl_peak_forces'; rl_cl_peak_forces'];
 
-        xlabel('Time (s)');
-        ylabel('TMD Displacement (cm)');
-        title('TMD Mass Motion (PEER\_Insane)');
-        legend('Location', 'best');
-        grid on;
-    else
-        text(0.5, 0.5, 'Time history data not available', 'HorizontalAlignment', 'center');
-        axis off;
-    end
+    bar_handle = bar(force_data', 'grouped');
+    bar_handle(1).FaceColor = [1 0.6 0];       % Fuzzy
+    bar_handle(2).FaceColor = [0.3 0.5 0.8];   % RL Base
+    bar_handle(3).FaceColor = [0.2 0.8 0.2];   % RL CL
+
+    set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
+    xtickangle(45);
+    xlabel('Scenario');
+    ylabel('Peak Control Force (kN)');
+    title('Peak Control Force Across Scenarios');
+    legend({'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
+    grid on;
 
     % Plot 7: Absolute Displacement Reduction
     subplot(3, 3, 7);
@@ -1467,37 +1460,32 @@ function create_analysis_plots(results, scenarios)
     grid on;
     yline(0, 'k--');
 
-    % Plot 8: Story-by-Story Maximum Drift Comparison
+    % Plot 8: DCR (Drift Concentration Ratio) Comparison
     subplot(3, 3, 8);
-    N = size(results.Passive.peak_disp_by_floor, 1);  % Number of floors
 
-    % Get valid scenario indices
-    valid_idx = find(valid);
+    % Extract DCR for valid scenarios
+    passive_dcr = results.Passive.DCR(valid);
+    fuzzy_dcr = results.Fuzzy.DCR(valid);
+    rl_dcr = results.RL_Base.DCR(valid);
+    rl_cl_dcr = results.RL_CL.DCR(valid);
 
-    % Average peak displacement across all valid scenarios
-    passive_avg_by_floor = mean(results.Passive.peak_disp_by_floor(:, valid_idx), 2) * 100;  % cm
-    fuzzy_avg_by_floor = mean(results.Fuzzy.peak_disp_by_floor(:, valid_idx), 2) * 100;
-    rl_avg_by_floor = mean(results.RL_Base.peak_disp_by_floor(:, valid_idx), 2) * 100;
-    rl_cl_avg_by_floor = mean(results.RL_CL.peak_disp_by_floor(:, valid_idx), 2) * 100;
+    % Create grouped bar chart
+    dcr_data = [passive_dcr'; fuzzy_dcr'; rl_dcr'; rl_cl_dcr'];
 
-    floors = 1:N;
-    floor_width = 0.2;
+    bar_handle = bar(dcr_data', 'grouped');
+    bar_handle(1).FaceColor = [0.7 0.7 0.7];   % Passive
+    bar_handle(2).FaceColor = [1 0.6 0];       % Fuzzy
+    bar_handle(3).FaceColor = [0.3 0.5 0.8];   % RL Base
+    bar_handle(4).FaceColor = [0.2 0.8 0.2];   % RL CL
 
-    hold on;
-    for i = 1:N
-        bar(i - 1.5*floor_width, passive_avg_by_floor(i), floor_width, 'FaceColor', [0.7 0.7 0.7]);
-        bar(i - 0.5*floor_width, fuzzy_avg_by_floor(i), floor_width, 'FaceColor', [1 0.6 0]);
-        bar(i + 0.5*floor_width, rl_avg_by_floor(i), floor_width, 'FaceColor', [0.3 0.5 0.8]);
-        bar(i + 1.5*floor_width, rl_cl_avg_by_floor(i), floor_width, 'FaceColor', [0.2 0.8 0.2]);
-    end
-    hold off;
-
-    set(gca, 'XTick', 1:N, 'XTickLabel', floors);
-    xlabel('Floor Number');
-    ylabel('Average Peak Displacement (cm)');
-    title('Floor-by-Floor Displacement (Avg All Scenarios)');
-    legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'northeast');
+    set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
+    xtickangle(45);
+    xlabel('Scenario');
+    ylabel('DCR (Drift Concentration Ratio)');
+    title('Drift Concentration Ratio Comparison');
+    legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
     grid on;
+    yline(1, 'r--', 'LineWidth', 1.5);  % Ideal DCR = 1 (uniform drift)
 
     sgtitle('4-Way TMD Controller - Comprehensive Analysis', 'FontSize', 14, 'FontWeight', 'bold');
 
