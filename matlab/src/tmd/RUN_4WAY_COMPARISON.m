@@ -1485,63 +1485,43 @@ function create_analysis_plots(results, scenarios)
     legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'northeast');
     grid on;
 
-    % Plot 9: Controller Reaction Time Analysis
+    % Plot 9: Peak Force vs Improvement (Force-Efficiency Tradeoff)
     subplot(3, 3, 9);
-    if ~isempty(results.time_history.Passive.tmd_disp)
-        % Get reaction times (time of max force vs time of max displacement)
-        controllers_active = {'Fuzzy', 'RL_Base', 'RL_CL'};
-        time_max_force = [];
-        time_max_disp = [];
-        controller_labels = {};
 
-        for i = 1:length(controllers_active)
-            ctrl = controllers_active{i};
-            if ~isempty(results.time_history.(ctrl).time_max_force) && ...
-               results.time_history.(ctrl).time_max_force > 0
-                time_max_force = [time_max_force; results.time_history.(ctrl).time_max_force];
-                time_max_disp = [time_max_disp; results.time_history.(ctrl).time_max_disp];
-                controller_labels{end+1} = ctrl;
-            end
-        end
+    % Get average values across valid scenarios
+    fuzzy_avg_force = mean(results.Fuzzy.peak_force(valid));
+    fuzzy_avg_imp = mean(results.Fuzzy.improvement_roof(valid));
+    rl_avg_force = mean(results.RL_Base.peak_force(valid));
+    rl_avg_imp = mean(results.RL_Base.improvement_roof(valid));
+    rl_cl_avg_force = mean(results.RL_CL.peak_force(valid));
+    rl_cl_avg_imp = mean(results.RL_CL.improvement_roof(valid));
 
-        if ~isempty(time_max_force)
-            % Calculate reaction delay (positive = force peaks after displacement)
-            reaction_delay = time_max_force - time_max_disp;
+    % Create scatter plot
+    scatter(fuzzy_avg_force, fuzzy_avg_imp, 200, 'o', ...
+        'MarkerEdgeColor', [1 0.6 0], 'MarkerFaceColor', [1 0.6 0], 'LineWidth', 2);
+    hold on;
+    scatter(rl_avg_force, rl_avg_imp, 200, 's', ...
+        'MarkerEdgeColor', [0.3 0.5 0.8], 'MarkerFaceColor', [0.3 0.5 0.8], 'LineWidth', 2);
+    scatter(rl_cl_avg_force, rl_cl_avg_imp, 200, 'd', ...
+        'MarkerEdgeColor', [0.2 0.8 0.2], 'MarkerFaceColor', [0.2 0.8 0.2], 'LineWidth', 2);
+    hold off;
 
-            % Create grouped bar chart
-            x_pos = 1:length(controller_labels);
-            ctrl_colors = [1 0.6 0; 0.3 0.5 0.8; 0.2 0.8 0.2];
+    xlabel('Average Peak Force (kN)');
+    ylabel('Average Improvement (%)');
+    title('Force-Performance Tradeoff');
+    legend({'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
+    grid on;
 
-            hold on;
-            for i = 1:length(controller_labels)
-                bar(x_pos(i), reaction_delay(i), 'FaceColor', ctrl_colors(i, :), 'EdgeColor', 'k', 'LineWidth', 1.5);
-            end
-            hold off;
-
-            set(gca, 'XTick', x_pos, 'XTickLabel', strrep(controller_labels, '_', ' '));
-            ylabel('Reaction Delay (s)');
-            title('Control Reaction Time Analysis');
-            grid on;
-            yline(0, 'k--', 'LineWidth', 1.5);
-
-            % Add text annotations
-            for i = 1:length(reaction_delay)
-                if reaction_delay(i) > 0
-                    text(x_pos(i), reaction_delay(i) + 0.1, sprintf('%.2fs late', reaction_delay(i)), ...
-                        'HorizontalAlignment', 'center', 'FontSize', 8);
-                else
-                    text(x_pos(i), reaction_delay(i) - 0.1, sprintf('%.2fs early', abs(reaction_delay(i))), ...
-                        'HorizontalAlignment', 'center', 'FontSize', 8, 'VerticalAlignment', 'top');
-                end
-            end
-        else
-            text(0.5, 0.5, 'No active controller data available', 'HorizontalAlignment', 'center');
-            axis off;
-        end
-    else
-        text(0.5, 0.5, 'Time history data not available', 'HorizontalAlignment', 'center');
-        axis off;
-    end
+    % Add annotations with values
+    text(fuzzy_avg_force + 2, fuzzy_avg_imp + 2, ...
+        sprintf('Fuzzy\n(%.1f kN, %.1f%%)', fuzzy_avg_force, fuzzy_avg_imp), ...
+        'FontSize', 8, 'Color', [1 0.6 0]);
+    text(rl_avg_force + 2, rl_avg_imp - 5, ...
+        sprintf('RL Base\n(%.1f kN, %.1f%%)', rl_avg_force, rl_avg_imp), ...
+        'FontSize', 8, 'Color', [0.3 0.5 0.8]);
+    text(rl_cl_avg_force + 2, rl_cl_avg_imp + 2, ...
+        sprintf('RL CL\n(%.1f kN, %.1f%%)', rl_cl_avg_force, rl_cl_avg_imp), ...
+        'FontSize', 8, 'Color', [0.2 0.8 0.2]);
 
     sgtitle('4-Way TMD Controller - Comprehensive Analysis', 'FontSize', 14, 'FontWeight', 'bold');
 
