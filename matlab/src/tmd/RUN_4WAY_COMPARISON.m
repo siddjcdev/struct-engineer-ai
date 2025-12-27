@@ -172,6 +172,8 @@ function run_all_scenarios(API_URL, folder, N, m0, k0, zeta_target, dt, soft_sto
     display_results_table(results, scenarios);
     create_comparison_plots(results, scenarios);
     fprintf('  ✓ Saved: 4way_comparison_plots.png\n\n');
+    create_analysis_plots(results, scenarios);
+    fprintf('  ✓ Saved: 4way_analysis_plots.png\n\n');
     save_results(results, scenarios, API_URL, 'comprehensive');
 
     fprintf('\n═══ COMPREHENSIVE TEST COMPLETE ═══\n');
@@ -270,7 +272,15 @@ function results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt
         results.(ctrl{1}).peak_force = zeros(n_scenarios, 1);
         results.(ctrl{1}).mean_force = zeros(n_scenarios, 1);
         results.(ctrl{1}).time = zeros(n_scenarios, 1);
+        results.(ctrl{1}).peak_disp_by_floor = zeros(N, n_scenarios);  % Peak displacement at each floor
+        results.(ctrl{1}).rms_roof_accel = zeros(n_scenarios, 1);      % RMS roof acceleration
     end
+
+    % Store earthquake metadata
+    results.earthquake = struct();
+    results.earthquake.PGA = zeros(n_scenarios, 1);
+    results.earthquake.time = cell(n_scenarios, 1);
+    results.earthquake.accel = cell(n_scenarios, 1);
 
     % Main test loop
     fprintf('🚀 Starting 4-way comparison...\n\n');
@@ -303,6 +313,11 @@ function results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt
         fprintf('  Earthquake: %d steps, %.1f seconds\n', Nt, t(end));
         fprintf('  PGA: %.3f m/s² (%.2fg)\n\n', max(abs(ag)), max(abs(ag))/9.81);
 
+        % Store earthquake data
+        results.earthquake.PGA(scenario_idx) = max(abs(ag));
+        results.earthquake.time{scenario_idx} = t;
+        results.earthquake.accel{scenario_idx} = ag;
+
         % ========== TEST 1: PASSIVE TMD ==========
         fprintf('  [1/4] Testing Passive TMD... ');
         tic;
@@ -312,6 +327,8 @@ function results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt
         results.Passive.max_drift(scenario_idx) = passive_results.max_drift;
         results.Passive.DCR(scenario_idx) = passive_results.DCR;
         results.Passive.rms_roof(scenario_idx) = passive_results.rms_roof;
+        results.Passive.peak_disp_by_floor(:, scenario_idx) = passive_results.peak_disp_by_floor;
+        results.Passive.rms_roof_accel(scenario_idx) = passive_results.rms_roof_accel;
         results.Passive.time(scenario_idx) = toc;
         fprintf('Peak: %.2f cm (%.2f s)\n', passive_results.peak_roof*100, results.Passive.time(scenario_idx));
 
@@ -325,6 +342,12 @@ function results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt
         results.Fuzzy.rms_roof(scenario_idx) = fuzzy_results.rms_roof;
         results.Fuzzy.peak_force(scenario_idx) = fuzzy_results.peak_force;
         results.Fuzzy.mean_force(scenario_idx) = fuzzy_results.mean_force;
+        if isfield(fuzzy_results, 'peak_disp_by_floor')
+            results.Fuzzy.peak_disp_by_floor(:, scenario_idx) = fuzzy_results.peak_disp_by_floor;
+        end
+        if isfield(fuzzy_results, 'rms_roof_accel')
+            results.Fuzzy.rms_roof_accel(scenario_idx) = fuzzy_results.rms_roof_accel;
+        end
         results.Fuzzy.time(scenario_idx) = toc;
         fprintf('Peak: %.2f cm, Force: %.1f kN (%.2f s)\n', ...
             fuzzy_results.peak_roof*100, fuzzy_results.mean_force, results.Fuzzy.time(scenario_idx));
@@ -339,6 +362,12 @@ function results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt
         results.RL_Base.rms_roof(scenario_idx) = rl_results.rms_roof;
         results.RL_Base.peak_force(scenario_idx) = rl_results.peak_force;
         results.RL_Base.mean_force(scenario_idx) = rl_results.mean_force;
+        if isfield(rl_results, 'peak_disp_by_floor')
+            results.RL_Base.peak_disp_by_floor(:, scenario_idx) = rl_results.peak_disp_by_floor;
+        end
+        if isfield(rl_results, 'rms_roof_accel')
+            results.RL_Base.rms_roof_accel(scenario_idx) = rl_results.rms_roof_accel;
+        end
         results.RL_Base.time(scenario_idx) = toc;
         fprintf('Peak: %.2f cm, Force: %.1f kN (%.2f s)\n', ...
             rl_results.peak_roof*100, rl_results.mean_force, results.RL_Base.time(scenario_idx));
@@ -353,6 +382,12 @@ function results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt
         results.RL_CL.rms_roof(scenario_idx) = rl_cl_results.rms_roof;
         results.RL_CL.peak_force(scenario_idx) = rl_cl_results.peak_force;
         results.RL_CL.mean_force(scenario_idx) = rl_cl_results.mean_force;
+        if isfield(rl_cl_results, 'peak_disp_by_floor')
+            results.RL_CL.peak_disp_by_floor(:, scenario_idx) = rl_cl_results.peak_disp_by_floor;
+        end
+        if isfield(rl_cl_results, 'rms_roof_accel')
+            results.RL_CL.rms_roof_accel(scenario_idx) = rl_cl_results.rms_roof_accel;
+        end
         results.RL_CL.time(scenario_idx) = toc;
         fprintf('Peak: %.2f cm, Force: %.1f kN (%.2f s)\n\n', ...
             rl_cl_results.peak_roof*100, rl_cl_results.mean_force, results.RL_CL.time(scenario_idx));
@@ -439,27 +474,31 @@ end
 function [passive_results, x_passive, v_passive, M_passive, K_passive, C_passive] = test_passive_tmd(...
     M, K, C, Fg, t, om_sorted, tmd_mass, N, Nt)
     % Test passive TMD controller
-    
+
     % Find optimal passive TMD parameters
     [passive_floor, passive_freq, passive_damping] = optimize_passive_tmd(M, K, C, Fg, t, om_sorted(1), tmd_mass);
-    
+
     % Build passive TMD system
     k_tmd_passive = tmd_mass * passive_freq^2;
     c_tmd_passive = 2 * passive_damping * sqrt(k_tmd_passive * tmd_mass);
-    
+
     [M_passive, K_passive, C_passive, F_passive] = augment_with_TMD(M, K, C, Fg, N, tmd_mass, k_tmd_passive, c_tmd_passive, Nt, passive_floor);
-    
+
     % Simulate
     [x_passive, v_passive, a_passive] = newmark_simulate(M_passive, C_passive, K_passive, F_passive, t);
-    
+
     % Extract results
     roof_passive = x_passive(N, :);
     drift_passive = compute_interstory_drifts(x_passive(1:N, :));
-    
+
     passive_results.peak_roof = max(abs(roof_passive));
     passive_results.max_drift = max(abs(drift_passive(:)));
     passive_results.DCR = compute_DCR(drift_passive);
     passive_results.rms_roof = rms(roof_passive);
+
+    % Additional metrics for analysis plots
+    passive_results.peak_disp_by_floor = max(abs(x_passive(1:N, :)), [], 2);  % Peak displacement at each floor
+    passive_results.rms_roof_accel = rms(a_passive(N, :));  % RMS roof acceleration
 end
 
 function active_results = test_active_controller(x_passive, v_passive, M_passive, K_passive, C_passive,...
@@ -1160,6 +1199,142 @@ function create_comparison_plots(results, scenarios)
     sgtitle('4-Way TMD Controller Comparison', 'FontSize', 14, 'FontWeight', 'bold');
 
     saveas(fig, '4way_comparison_plots.png');
+end
+
+function create_analysis_plots(results, scenarios)
+    % Create additional analysis plots for earthquake and structural response characterization
+    valid = results.Passive.peak_roof > 0;
+    scenario_labels = scenarios(valid, 1);
+    n_scenarios = sum(valid);
+
+    % Find the 4 base scenarios (not perturbation variants)
+    base_idx = find(valid & ~startsWith(scenario_labels, 'Mod_'));
+    base_labels = scenario_labels(base_idx);
+
+    fig = figure('Position', [100 100 1800 1000], 'Color', 'w');
+
+    % Plot 1: Main Datasets' Distribution of Acceleration (time series for 4 base scenarios)
+    subplot(2, 3, 1);
+    colors = {[0.2 0.4 0.8], [1 0.6 0], [0.8 0.2 0.2], [0.6 0.2 0.6]};
+    hold on;
+    for i = 1:length(base_idx)
+        global_idx = find(strcmp(scenarios(:,1), base_labels{i}));
+        t = results.earthquake.time{global_idx};
+        ag = results.earthquake.accel{global_idx};
+        plot(t, ag, 'Color', colors{i}, 'LineWidth', 1.5, 'DisplayName', base_labels{i});
+    end
+    hold off;
+    xlabel('Time (s)');
+    ylabel('Acceleration (m/s²)');
+    title('Earthquake Ground Motion Time Series');
+    legend('Location', 'best');
+    grid on;
+
+    % Plot 2: PGA of All Scenarios
+    subplot(2, 3, 2);
+    x = 1:n_scenarios;
+    pga_values = results.earthquake.PGA(valid);
+    bar(x, pga_values, 'FaceColor', [0.4 0.6 0.8]);
+    set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
+    xtickangle(45);
+    ylabel('PGA (m/s²)');
+    title('Peak Ground Acceleration - All Scenarios');
+    grid on;
+
+    % Plot 3: Peak Displacement By Story (for 4 base scenarios)
+    subplot(2, 3, 3);
+    N = size(results.Passive.peak_disp_by_floor, 1);  % Number of floors
+    floors = 1:N;
+    hold on;
+    for i = 1:min(4, length(base_idx))
+        global_idx = find(strcmp(scenarios(:,1), base_labels{i}));
+        % Average peak displacement across all 4 controllers
+        avg_peak = (results.Passive.peak_disp_by_floor(:, global_idx) + ...
+                    results.Fuzzy.peak_disp_by_floor(:, global_idx) + ...
+                    results.RL_Base.peak_disp_by_floor(:, global_idx) + ...
+                    results.RL_CL.peak_disp_by_floor(:, global_idx)) / 4;
+        plot(avg_peak * 100, floors, 'o-', 'Color', colors{i}, 'LineWidth', 2, ...
+            'MarkerSize', 6, 'MarkerFaceColor', colors{i}, 'DisplayName', base_labels{i});
+    end
+    hold off;
+    ylabel('Floor Number');
+    xlabel('Peak Displacement (cm)');
+    title('Peak Displacement Profile (Avg of 4 Controllers)');
+    legend('Location', 'best');
+    grid on;
+
+    % Plot 4: Maximum RMS Displacement Reduction
+    subplot(2, 3, 4);
+    width = 0.25;
+    x = 1:n_scenarios;
+
+    % Calculate RMS reduction vs passive
+    fuzzy_rms_reduction = (results.Passive.rms_roof(valid) - results.Fuzzy.rms_roof(valid)) ./ results.Passive.rms_roof(valid) * 100;
+    rl_rms_reduction = (results.Passive.rms_roof(valid) - results.RL_Base.rms_roof(valid)) ./ results.Passive.rms_roof(valid) * 100;
+    rl_cl_rms_reduction = (results.Passive.rms_roof(valid) - results.RL_CL.rms_roof(valid)) ./ results.Passive.rms_roof(valid) * 100;
+
+    bar(x - width, fuzzy_rms_reduction, width, 'FaceColor', [1 0.6 0]);
+    hold on;
+    bar(x, rl_rms_reduction, width, 'FaceColor', [0.3 0.5 0.8]);
+    bar(x + width, rl_cl_rms_reduction, width, 'FaceColor', [0.2 0.8 0.2]);
+    hold off;
+
+    set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
+    xtickangle(45);
+    ylabel('RMS Displacement Reduction (%)');
+    title('RMS Displacement Reduction vs Passive');
+    legend({'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
+    grid on;
+    yline(0, 'k--');
+
+    % Plot 5: Max RMS Roof Acceleration (for all scenarios)
+    subplot(2, 3, 5);
+    bar(x - 1.5*width, results.Passive.rms_roof_accel(valid), width, 'FaceColor', [0.7 0.7 0.7]);
+    hold on;
+    bar(x - 0.5*width, results.Fuzzy.rms_roof_accel(valid), width, 'FaceColor', [1 0.6 0]);
+    bar(x + 0.5*width, results.RL_Base.rms_roof_accel(valid), width, 'FaceColor', [0.3 0.5 0.8]);
+    bar(x + 1.5*width, results.RL_CL.rms_roof_accel(valid), width, 'FaceColor', [0.2 0.8 0.2]);
+    hold off;
+
+    set(gca, 'XTick', 1:n_scenarios, 'XTickLabel', scenario_labels);
+    xtickangle(45);
+    ylabel('RMS Roof Acceleration (m/s²)');
+    title('RMS Roof Acceleration - All Controllers');
+    legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
+    grid on;
+
+    % Plot 6: Improvement Summary Table (text visualization)
+    subplot(2, 3, 6);
+    axis off;
+
+    % Calculate average improvements
+    avg_peak_imp = [mean(results.Fuzzy.improvement_roof(valid)), ...
+                    mean(results.RL_Base.improvement_roof(valid)), ...
+                    mean(results.RL_CL.improvement_roof(valid))];
+    avg_rms_imp = [mean(fuzzy_rms_reduction), mean(rl_rms_reduction), mean(rl_cl_rms_reduction)];
+    avg_dcr_imp = [mean(results.Fuzzy.improvement_DCR(valid)), ...
+                   mean(results.RL_Base.improvement_DCR(valid)), ...
+                   mean(results.RL_CL.improvement_DCR(valid))];
+
+    % Create text table
+    text(0.1, 0.9, 'Average Performance Summary', 'FontSize', 12, 'FontWeight', 'bold');
+    text(0.1, 0.8, sprintf('Fuzzy: Peak %.1f%%, RMS %.1f%%, DCR %.1f%%', ...
+        avg_peak_imp(1), avg_rms_imp(1), avg_dcr_imp(1)), 'FontSize', 10, 'Color', [1 0.6 0]);
+    text(0.1, 0.7, sprintf('RL Base: Peak %.1f%%, RMS %.1f%%, DCR %.1f%%', ...
+        avg_peak_imp(2), avg_rms_imp(2), avg_dcr_imp(2)), 'FontSize', 10, 'Color', [0.3 0.5 0.8]);
+    text(0.1, 0.6, sprintf('RL CL: Peak %.1f%%, RMS %.1f%%, DCR %.1f%%', ...
+        avg_peak_imp(3), avg_rms_imp(3), avg_dcr_imp(3)), 'FontSize', 10, 'Color', [0.2 0.8 0.2]);
+
+    text(0.1, 0.4, 'Key Findings:', 'FontSize', 11, 'FontWeight', 'bold');
+    [~, best_idx] = max(avg_peak_imp);
+    best_names = {'Fuzzy', 'RL Base', 'RL CL'};
+    text(0.1, 0.3, sprintf('• Best Peak Reduction: %s', best_names{best_idx}), 'FontSize', 9);
+    text(0.1, 0.2, sprintf('• Scenarios Tested: %d', n_scenarios), 'FontSize', 9);
+    text(0.1, 0.1, sprintf('• Building: %d floors with soft story', N), 'FontSize', 9);
+
+    sgtitle('4-Way TMD Controller - Additional Analysis', 'FontSize', 14, 'FontWeight', 'bold');
+
+    saveas(fig, '4way_analysis_plots.png');
 end
 
 function save_results(results, scenarios, API_URL, test_name)
