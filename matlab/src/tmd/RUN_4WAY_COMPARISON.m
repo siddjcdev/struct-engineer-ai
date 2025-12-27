@@ -1016,11 +1016,11 @@ function create_comparison_plots(results, scenarios)
             y_val = rl_improvements(idx);
 
             % Highlight the failure with red shaded danger zone
-            fill([idx-0.5, idx+0.5, idx+0.5, idx-0.5], [-250, -250, 0, 0], ...
-                 [1 0.8 0.8], 'EdgeColor', 'none', 'FaceAlpha', 0.3);
+            % fill([idx-0.5, idx+0.5, idx+0.5, idx-0.5], [-250, -250, 0, 0], ...
+            %      [1 0.8 0.8], 'EdgeColor', 'none', 'FaceAlpha', 0.3);
 
             % Add catastrophic failure warning (moved to the side with arrow)
-            annotation_x = idx + 2.5;  % Move to the right
+            annotation_x = idx - 6;  % Move to the left of the bar
             annotation_y = -150;
 
             text(annotation_x, annotation_y, '⚠️ CATASTROPHIC FAILURE', ...
@@ -1030,11 +1030,11 @@ function create_comparison_plots(results, scenarios)
                 'FontSize', 9, 'FontWeight', 'bold', 'Color', [0.6 0 0], ...
                 'HorizontalAlignment', 'left');
 
-            % Draw arrow pointing to the RL Base bar
-            annotation('arrow', ...
-                'X', [0.35, 0.30], ...  % Adjust based on subplot position
-                'Y', [0.35, 0.25], ...
-                'Color', 'r', 'LineWidth', 2, 'HeadStyle', 'cback1', 'HeadLength', 8, 'HeadWidth', 8);
+            % % Draw arrow pointing to the RL Base bar
+            % annotation('arrow', ...
+            %     'X', [idx, idx-2.0], ...  % Adjust based on subplot position
+            %     'Y', [1.5, 0.25], ...
+            %     'Color', 'r', 'LineWidth', 2, 'HeadStyle', 'cback1', 'HeadLength', 8, 'HeadWidth', 8);
 
             text(idx, y_val - 20, sprintf('%.0f%%', y_val), ...
                 'HorizontalAlignment', 'center', 'Color', 'red', 'FontWeight', 'bold', 'FontSize', 9);
