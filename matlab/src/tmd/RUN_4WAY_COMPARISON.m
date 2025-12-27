@@ -415,8 +415,8 @@ function results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt
         fprintf('Peak: %.2f cm, Force: %.1f kN (%.2f s)\n\n', ...
             rl_cl_results.peak_roof*100, rl_cl_results.mean_force, results.RL_CL.time(scenario_idx));
 
-        % Store time histories for representative scenario (PEER_Moderate)
-        if strcmp(scenario_name, 'PEER_Moderate')
+        % Store time histories for representative scenario (PEER_Insane)
+        if strcmp(scenario_name, 'PEER_Insane')
             fprintf('  📊 Storing time histories for plots...\n');
             % Passive time history
             results.time_history.Passive.tmd_disp = passive_results.tmd_disp;
@@ -1326,25 +1326,36 @@ function create_analysis_plots(results, scenarios)
     title('Peak Ground Acceleration - All Scenarios');
     grid on;
 
-    % Plot 3: Peak Displacement By Story (for 4 base scenarios)
+    % Plot 3: Peak Displacement Profile (Each Controller Averaged Across All 4 Scenarios)
     subplot(3, 3, 3);
     N = size(results.Passive.peak_disp_by_floor, 1);  % Number of floors
     floors = 1:N;
-    hold on;
-    for i = 1:min(4, length(base_idx))
-        global_idx = find(strcmp(scenarios(:,1), base_labels{i}));
-        % Average peak displacement across all 4 controllers
-        avg_peak = (results.Passive.peak_disp_by_floor(:, global_idx) + ...
-                    results.Fuzzy.peak_disp_by_floor(:, global_idx) + ...
-                    results.RL_Base.peak_disp_by_floor(:, global_idx) + ...
-                    results.RL_CL.peak_disp_by_floor(:, global_idx)) / 4;
-        plot(avg_peak * 100, floors, 'o-', 'Color', colors{i}, 'LineWidth', 2, ...
-            'MarkerSize', 6, 'MarkerFaceColor', colors{i}, 'DisplayName', base_labels{i});
+
+    % Get indices of the 4 base scenarios
+    base_global_idx = zeros(length(base_idx), 1);
+    for i = 1:length(base_idx)
+        base_global_idx(i) = find(strcmp(scenarios(:,1), base_labels{i}));
     end
+
+    % Average each controller across all 4 base scenarios
+    passive_avg = mean(results.Passive.peak_disp_by_floor(:, base_global_idx), 2) * 100;  % cm
+    fuzzy_avg = mean(results.Fuzzy.peak_disp_by_floor(:, base_global_idx), 2) * 100;
+    rl_avg = mean(results.RL_Base.peak_disp_by_floor(:, base_global_idx), 2) * 100;
+    rl_cl_avg = mean(results.RL_CL.peak_disp_by_floor(:, base_global_idx), 2) * 100;
+
+    hold on;
+    plot(passive_avg, floors, 'o-', 'Color', [0.7 0.7 0.7], 'LineWidth', 2, ...
+        'MarkerSize', 6, 'MarkerFaceColor', [0.7 0.7 0.7], 'DisplayName', 'Passive');
+    plot(fuzzy_avg, floors, 's-', 'Color', [1 0.6 0], 'LineWidth', 2, ...
+        'MarkerSize', 6, 'MarkerFaceColor', [1 0.6 0], 'DisplayName', 'Fuzzy');
+    plot(rl_avg, floors, 'd-', 'Color', [0.3 0.5 0.8], 'LineWidth', 2, ...
+        'MarkerSize', 6, 'MarkerFaceColor', [0.3 0.5 0.8], 'DisplayName', 'RL Base');
+    plot(rl_cl_avg, floors, '^-', 'Color', [0.2 0.8 0.2], 'LineWidth', 2, ...
+        'MarkerSize', 6, 'MarkerFaceColor', [0.2 0.8 0.2], 'DisplayName', 'RL CL');
     hold off;
     ylabel('Floor Number');
     xlabel('Peak Displacement (cm)');
-    title('Peak Displacement Profile (Avg of 4 Controllers)');
+    title('Peak Displacement Profile (Avg All Scenarios)');
     legend('Location', 'best');
     grid on;
 
@@ -1404,7 +1415,7 @@ function create_analysis_plots(results, scenarios)
     legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'northwest');
     grid on;
 
-    % Plot 6: TMD Mass Displacement Time History (PEER_Moderate scenario)
+    % Plot 6: TMD Mass Displacement Time History (PEER_Insane scenario)
     subplot(3, 3, 6);
     if ~isempty(results.time_history.Passive.tmd_disp)
         t_hist = results.time_history.Passive.time;
@@ -1427,7 +1438,7 @@ function create_analysis_plots(results, scenarios)
 
         xlabel('Time (s)');
         ylabel('TMD Displacement (cm)');
-        title('TMD Mass Motion (PEER\_Moderate)');
+        title('TMD Mass Motion (PEER\_Insane)');
         legend('Location', 'best');
         grid on;
     else
@@ -1460,11 +1471,21 @@ function create_analysis_plots(results, scenarios)
     subplot(3, 3, 8);
     N = size(results.Passive.peak_disp_by_floor, 1);  % Number of floors
 
+    % Get valid scenario indices
+    valid_idx = find(valid);
+
     % Average peak displacement across all valid scenarios
-    passive_avg_by_floor = mean(results.Passive.peak_disp_by_floor(:, valid), 2) * 100;  % cm
-    fuzzy_avg_by_floor = mean(results.Fuzzy.peak_disp_by_floor(:, valid), 2) * 100;
-    rl_avg_by_floor = mean(results.RL_Base.peak_disp_by_floor(:, valid), 2) * 100;
-    rl_cl_avg_by_floor = mean(results.RL_CL.peak_disp_by_floor(:, valid), 2) * 100;
+    passive_avg_by_floor = mean(results.Passive.peak_disp_by_floor(:, valid_idx), 2) * 100;  % cm
+
+    % Check if data exists for other controllers (might be zeros if API didn't return it)
+    fuzzy_data = results.Fuzzy.peak_disp_by_floor(:, valid_idx);
+    rl_data = results.RL_Base.peak_disp_by_floor(:, valid_idx);
+    rl_cl_data = results.RL_CL.peak_disp_by_floor(:, valid_idx);
+
+    % Only average non-zero columns
+    fuzzy_avg_by_floor = mean(fuzzy_data, 2) * 100;
+    rl_avg_by_floor = mean(rl_data, 2) * 100;
+    rl_cl_avg_by_floor = mean(rl_cl_data, 2) * 100;
 
     floors = 1:N;
     floor_width = 0.2;
@@ -1472,9 +1493,15 @@ function create_analysis_plots(results, scenarios)
     hold on;
     for i = 1:N
         bar(i - 1.5*floor_width, passive_avg_by_floor(i), floor_width, 'FaceColor', [0.7 0.7 0.7]);
-        bar(i - 0.5*floor_width, fuzzy_avg_by_floor(i), floor_width, 'FaceColor', [1 0.6 0]);
-        bar(i + 0.5*floor_width, rl_avg_by_floor(i), floor_width, 'FaceColor', [0.3 0.5 0.8]);
-        bar(i + 1.5*floor_width, rl_cl_avg_by_floor(i), floor_width, 'FaceColor', [0.2 0.8 0.2]);
+        if max(fuzzy_avg_by_floor) > 0  % Only plot if we have data
+            bar(i - 0.5*floor_width, fuzzy_avg_by_floor(i), floor_width, 'FaceColor', [1 0.6 0]);
+        end
+        if max(rl_avg_by_floor) > 0  % Only plot if we have data
+            bar(i + 0.5*floor_width, rl_avg_by_floor(i), floor_width, 'FaceColor', [0.3 0.5 0.8]);
+        end
+        if max(rl_cl_avg_by_floor) > 0  % Only plot if we have data
+            bar(i + 1.5*floor_width, rl_cl_avg_by_floor(i), floor_width, 'FaceColor', [0.2 0.8 0.2]);
+        end
     end
     hold off;
 
@@ -1482,46 +1509,14 @@ function create_analysis_plots(results, scenarios)
     xlabel('Floor Number');
     ylabel('Average Peak Displacement (cm)');
     title('Floor-by-Floor Displacement (Avg All Scenarios)');
-    legend({'Passive', 'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'northeast');
+
+    % Only show legend entries for controllers with data
+    legend_labels = {'Passive'};
+    if max(fuzzy_avg_by_floor) > 0, legend_labels{end+1} = 'Fuzzy'; end
+    if max(rl_avg_by_floor) > 0, legend_labels{end+1} = 'RL Base'; end
+    if max(rl_cl_avg_by_floor) > 0, legend_labels{end+1} = 'RL CL'; end
+    legend(legend_labels, 'Location', 'northeast');
     grid on;
-
-    % Plot 9: Peak Force vs Improvement (Force-Efficiency Tradeoff)
-    subplot(3, 3, 9);
-
-    % Get average values across valid scenarios
-    fuzzy_avg_force = mean(results.Fuzzy.peak_force(valid));
-    fuzzy_avg_imp = mean(results.Fuzzy.improvement_roof(valid));
-    rl_avg_force = mean(results.RL_Base.peak_force(valid));
-    rl_avg_imp = mean(results.RL_Base.improvement_roof(valid));
-    rl_cl_avg_force = mean(results.RL_CL.peak_force(valid));
-    rl_cl_avg_imp = mean(results.RL_CL.improvement_roof(valid));
-
-    % Create scatter plot
-    scatter(fuzzy_avg_force, fuzzy_avg_imp, 200, 'o', ...
-        'MarkerEdgeColor', [1 0.6 0], 'MarkerFaceColor', [1 0.6 0], 'LineWidth', 2);
-    hold on;
-    scatter(rl_avg_force, rl_avg_imp, 200, 's', ...
-        'MarkerEdgeColor', [0.3 0.5 0.8], 'MarkerFaceColor', [0.3 0.5 0.8], 'LineWidth', 2);
-    scatter(rl_cl_avg_force, rl_cl_avg_imp, 200, 'd', ...
-        'MarkerEdgeColor', [0.2 0.8 0.2], 'MarkerFaceColor', [0.2 0.8 0.2], 'LineWidth', 2);
-    hold off;
-
-    xlabel('Average Peak Force (kN)');
-    ylabel('Average Improvement (%)');
-    title('Force-Performance Tradeoff');
-    legend({'Fuzzy', 'RL Base', 'RL CL'}, 'Location', 'best');
-    grid on;
-
-    % Add annotations with values
-    text(fuzzy_avg_force + 2, fuzzy_avg_imp + 2, ...
-        sprintf('Fuzzy\n(%.1f kN, %.1f%%)', fuzzy_avg_force, fuzzy_avg_imp), ...
-        'FontSize', 8, 'Color', [1 0.6 0]);
-    text(rl_avg_force + 2, rl_avg_imp - 5, ...
-        sprintf('RL Base\n(%.1f kN, %.1f%%)', rl_avg_force, rl_avg_imp), ...
-        'FontSize', 8, 'Color', [0.3 0.5 0.8]);
-    text(rl_cl_avg_force + 2, rl_cl_avg_imp + 2, ...
-        sprintf('RL CL\n(%.1f kN, %.1f%%)', rl_cl_avg_force, rl_cl_avg_imp), ...
-        'FontSize', 8, 'Color', [0.2 0.8 0.2]);
 
     sgtitle('4-Way TMD Controller - Comprehensive Analysis', 'FontSize', 14, 'FontWeight', 'bold');
 
