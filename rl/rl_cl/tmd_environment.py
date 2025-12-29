@@ -293,9 +293,10 @@ class ImprovedTMDBuildingEnv(gym.Env):
 
             if percentile_75 > 1e-10:
                 instantaneous_dcr = max_drift / percentile_75
-                # Penalize deviation from ideal DCR=1.0
-                # Weight at 0.3x to encourage uniform drift without dominating displacement objective
-                dcr_penalty = -0.3 * (instantaneous_dcr - 1.0)
+                # IMPROVED: Squared penalty makes high DCR exponentially worse
+                # DCR=1.0 → 0, DCR=2.0 → -0.5, DCR=3.0 → -2.0
+                dcr_deviation = max(0, instantaneous_dcr - 1.0)
+                dcr_penalty = -0.5 * (dcr_deviation ** 2)
             else:
                 dcr_penalty = 0.0
         else:

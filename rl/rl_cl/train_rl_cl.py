@@ -29,11 +29,12 @@ def train_rl_cl(earthquake_files):
     print("="*70)
     print("\n🎯 Curriculum Plan:")
     
-    # Curriculum stages
+    # Curriculum stages - progress through earthquake magnitudes AND force limits
     stages = [
-        {'force_limit': 50000,  'timesteps': 150000, 'name': '50 kN (gentle)'},
-        {'force_limit': 100000, 'timesteps': 150000, 'name': '100 kN (moderate)'},
-        {'force_limit': 150000, 'timesteps': 200000, 'name': '150 kN (full)'},
+        {'force_limit': 50000,  'timesteps': 100000, 'name': 'M4.5 @ 50kN',  'eq_idx': 0},
+        {'force_limit': 100000, 'timesteps': 100000, 'name': 'M5.7 @ 100kN', 'eq_idx': 1 if len(earthquake_files) > 1 else 0},
+        {'force_limit': 150000, 'timesteps': 150000, 'name': 'M7.4 @ 150kN', 'eq_idx': 2 if len(earthquake_files) > 2 else 0},
+        {'force_limit': 150000, 'timesteps': 150000, 'name': 'M8.4 @ 150kN', 'eq_idx': 3 if len(earthquake_files) > 3 else 0},
     ]
     
     for i, stage in enumerate(stages, 1):
@@ -50,19 +51,21 @@ def train_rl_cl(earthquake_files):
         stage_num = stage_idx + 1
         force_limit = stage['force_limit']
         timesteps = stage['timesteps']
-        
+        eq_idx = stage['eq_idx']
+
         print(f"\n{'='*70}")
         print(f"  STAGE {stage_num}: {stage['name']}")
         print(f"{'='*70}\n")
-        
+        print(f"   Earthquake: {earthquake_files[eq_idx]}")
+
         # Create environment
         def make_env(eq_file, force_lim):
             env = make_improved_tmd_env(eq_file, max_force=force_lim)
             env = Monitor(env)
             return env
-        
-        # Use first earthquake file for training
-        env = DummyVecEnv([lambda: make_env(earthquake_files[0], force_limit)])
+
+        # Use earthquake for this curriculum stage
+        env = DummyVecEnv([lambda eq=eq_idx, fl=force_limit: make_env(earthquake_files[eq], fl)])
         
         # Create or update model
         if model is None:
@@ -99,17 +102,17 @@ def train_rl_cl(earthquake_files):
         
         # Quick test
         print(f"\n📊 Testing stage {stage_num}...")
-        test_env = make_improved_tmd_env(earthquake_files[0], max_force=force_limit)
+        test_env = make_improved_tmd_env(earthquake_files[eq_idx], max_force=force_limit)
         obs, _ = test_env.reset()
         done = False
         truncated = False
         peak = 0
-        
+
         while not (done or truncated):
             action, _ = model.predict(obs, deterministic=True)
             obs, reward, done, truncated, info = test_env.step(action)
             peak = max(peak, abs(info['roof_displacement']))
-        
+
         peak_cm = peak * 100
         print(f"   Peak displacement: {peak_cm:.2f} cm")
         print(f"✅ Stage {stage_num} complete!\n")
