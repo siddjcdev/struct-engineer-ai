@@ -30,14 +30,28 @@ class ImprovedTMDBuildingEnv(gym.Env):
         earthquake_data: np.ndarray,
         dt: float = 0.02,
         max_force: float = 150000.0,  # Start with 50 kN (will use curriculum)
-        earthquake_name: str = "Unknown"
+        earthquake_name: str = "Unknown",
+        # ROBUSTNESS AUGMENTATION PARAMETERS
+        sensor_noise_std: float = 0.0,  # Standard deviation for sensor noise (as fraction of signal)
+        actuator_noise_std: float = 0.0,  # Standard deviation for actuator noise
+        latency_steps: int = 0,  # Number of timesteps delay (0-2 for 0-40ms)
+        dropout_prob: float = 0.0  # Probability of control signal dropout
     ):
         super().__init__()
-        
+
         self.earthquake_data = earthquake_data
         self.dt = dt
         self.max_force = max_force
         self.earthquake_name = earthquake_name
+
+        # Robustness parameters
+        self.sensor_noise_std = sensor_noise_std
+        self.actuator_noise_std = actuator_noise_std
+        self.latency_steps = latency_steps
+        self.dropout_prob = dropout_prob
+
+        # Latency buffer for delayed actions
+        self.action_buffer = [0.0] * (latency_steps + 1) if latency_steps > 0 else [0.0]
         
         # Building parameters
         self.n_floors = 12
@@ -223,10 +237,23 @@ class ImprovedTMDBuildingEnv(gym.Env):
         self,
         action: np.ndarray
     ) -> Tuple[np.ndarray, float, bool, bool, dict]:
-        
+
         # Scale action to actual force
         control_force = float(action[0]) * self.max_force
-        
+
+        # ROBUSTNESS AUGMENTATION 1: Dropout (randomly zero control signal)
+        if self.dropout_prob > 0 and np.random.random() < self.dropout_prob:
+            control_force = 0.0
+
+        # ROBUSTNESS AUGMENTATION 2: Actuator noise
+        if self.actuator_noise_std > 0:
+            control_force += np.random.normal(0, self.actuator_noise_std * self.max_force)
+
+        # ROBUSTNESS AUGMENTATION 3: Latency (use delayed action)
+        if self.latency_steps > 0:
+            self.action_buffer.append(control_force)
+            control_force = self.action_buffer.pop(0)  # Use oldest action
+
         # Get ground acceleration
         ag = self.earthquake_data[self.current_step]
         
@@ -250,10 +277,17 @@ class ImprovedTMDBuildingEnv(gym.Env):
         roof_vel = self.velocity[11]
         tmd_disp = self.displacement[12]
         tmd_vel = self.velocity[12]
-        
+
         # IMPROVEMENT: Track roof acceleration
         self.roof_acceleration = self.acceleration[11]
-        
+
+        # ROBUSTNESS AUGMENTATION 4: Sensor noise
+        if self.sensor_noise_std > 0:
+            roof_disp += np.random.normal(0, self.sensor_noise_std * abs(roof_disp + 1e-6))
+            roof_vel += np.random.normal(0, self.sensor_noise_std * abs(roof_vel + 1e-6))
+            tmd_disp += np.random.normal(0, self.sensor_noise_std * abs(tmd_disp + 1e-6))
+            tmd_vel += np.random.normal(0, self.sensor_noise_std * abs(tmd_vel + 1e-6))
+
         # Observation
         obs = np.array([roof_disp, roof_vel, tmd_disp, tmd_vel], dtype=np.float32)
         
@@ -293,10 +327,11 @@ class ImprovedTMDBuildingEnv(gym.Env):
 
             if percentile_75 > 1e-10:
                 instantaneous_dcr = max_drift / percentile_75
-                # IMPROVED: Squared penalty makes high DCR exponentially worse
-                # DCR=1.0 → 0, DCR=2.0 → -0.5, DCR=3.0 → -2.0
+                # REDUCED: Lower weight to prevent brittle control policies
+                # DCR=1.0 → 0, DCR=2.0 → -0.1, DCR=3.0 → -0.4
+                # This encourages uniform drift WITHOUT sacrificing robustness
                 dcr_deviation = max(0, instantaneous_dcr - 1.0)
-                dcr_penalty = -0.5 * (dcr_deviation ** 2)
+                dcr_penalty = -0.1 * (dcr_deviation ** 2)
             else:
                 dcr_penalty = 0.0
         else:
@@ -472,10 +507,14 @@ class ImprovedTMDBuildingEnv(gym.Env):
 def make_improved_tmd_env(
     earthquake_file: str,
     earthquake_name: str = None,
-    max_force: float = 150000.0
+    max_force: float = 150000.0,
+    sensor_noise_std: float = 0.0,
+    actuator_noise_std: float = 0.0,
+    latency_steps: int = 0,
+    dropout_prob: float = 0.0
 ) -> ImprovedTMDBuildingEnv:
-    """Create improved TMD environment"""
-    
+    """Create improved TMD environment with optional robustness augmentation"""
+
     print(f"Loading earthquake data from {earthquake_file}...")
     data = np.loadtxt(earthquake_file, delimiter=',', skiprows=1)
     print(f"✅ Earthquake data loaded: {data.shape[0]} samples")
@@ -487,16 +526,20 @@ def make_improved_tmd_env(
     else:
         accelerations = data
         dt = 0.02
-    
+
     if earthquake_name is None:
         import os
         earthquake_name = os.path.basename(earthquake_file)
-    
+
     return ImprovedTMDBuildingEnv(
         earthquake_data=accelerations,
         dt=dt,
         max_force=max_force,
-        earthquake_name=earthquake_name
+        earthquake_name=earthquake_name,
+        sensor_noise_std=sensor_noise_std,
+        actuator_noise_std=actuator_noise_std,
+        latency_steps=latency_steps,
+        dropout_prob=dropout_prob
     )
 
 
