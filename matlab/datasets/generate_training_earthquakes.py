@@ -1,9 +1,11 @@
 """
-GENERATE SYNTHETIC TRAINING EARTHQUAKES
-========================================
+GENERATE SYNTHETIC TRAINING EARTHQUAKES - STABLE VERSION
+=========================================================
 
 Generates new earthquake time series with same magnitude/PGA as test data,
 but different waveforms to prevent memorization.
+
+Uses FREQUENCY-DOMAIN approach for numerical stability.
 
 Creates training set with identical statistical properties but different realizations:
 - M4.5 (PGA 0.25g) - 3 variants for training
@@ -11,20 +13,54 @@ Creates training set with identical statistical properties but different realiza
 - M7.4 (PGA 0.75g) - 3 variants for training
 - M8.4 (PGA 0.9g) - 3 variants for training
 
-Uses stochastic ground motion synthesis with controlled spectral characteristics.
-
 Usage: python generate_training_earthquakes.py
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy import signal
 import os
 
 
-def generate_kanai_tajimi_earthquake(duration, dt, pga_target, omega_g, zeta_g, seed=None):
+def kanai_tajimi_spectrum(freq, omega_g, zeta_g, S0=1.0):
     """
-    Generate synthetic earthquake using Kanai-Tajimi spectrum
+    Kanai-Tajimi power spectral density function
+
+    S(ω) = S0 * (1 + 4*ζ_g^2*(ω/ω_g)^2) / ((1 - (ω/ω_g)^2)^2 + 4*ζ_g^2*(ω/ω_g)^2)
+
+    Parameters:
+    - freq: frequency array (Hz)
+    - omega_g: predominant circular frequency (rad/s)
+    - zeta_g: damping ratio
+    - S0: spectral intensity
+
+    Returns:
+    - S: power spectral density at each frequency
+    """
+    omega = 2 * np.pi * freq
+    omega_g = omega_g
+
+    # Avoid division by zero
+    omega_ratio = np.divide(omega, omega_g, out=np.zeros_like(omega), where=omega_g!=0)
+
+    numerator = 1 + 4 * zeta_g**2 * omega_ratio**2
+    denominator = (1 - omega_ratio**2)**2 + 4 * zeta_g**2 * omega_ratio**2
+
+    # Prevent division by zero
+    S = np.divide(S0 * numerator, denominator, out=np.zeros_like(denominator), where=denominator>1e-10)
+
+    return S
+
+
+def generate_earthquake_frequency_domain(duration, dt, pga_target, omega_g, zeta_g, seed=None):
+    """
+    Generate synthetic earthquake using FREQUENCY DOMAIN approach (stable!)
+
+    Method:
+    1. Generate random phase spectrum
+    2. Apply Kanai-Tajimi amplitude spectrum
+    3. IFFT to time domain
+    4. Apply temporal envelope
+    5. Scale to target PGA
 
     Parameters:
     - duration: earthquake duration (seconds)
@@ -41,90 +77,66 @@ def generate_kanai_tajimi_earthquake(duration, dt, pga_target, omega_g, zeta_g, 
     if seed is not None:
         np.random.seed(seed)
 
-    # Generate white noise
+    # Time array
     n_steps = int(duration / dt)
-    white_noise = np.random.randn(n_steps)
-
-    # Kanai-Tajimi filter (models frequency content of earthquakes)
-    num = [1, 2*zeta_g*omega_g, omega_g**2]
-    den = [1, 2*zeta_g*omega_g, omega_g**2]
-
-    # Apply filter
-    filtered = signal.lfilter(num, den, white_noise)
-
-    # Apply envelope function (Jennings-type)
     time = np.arange(n_steps) * dt
-    t1 = duration * 0.15  # Rise time
-    t2 = duration * 0.7   # Decay start
+
+    # Frequency array (positive frequencies only for rfft)
+    freq = np.fft.rfftfreq(n_steps, dt)
+
+    # Generate random phase (uniformly distributed 0 to 2π)
+    random_phase = np.random.uniform(0, 2*np.pi, len(freq))
+
+    # Kanai-Tajimi spectrum (amplitude)
+    f_g = omega_g / (2 * np.pi)  # Convert to Hz
+    S0 = 1.0  # Will scale later
+    amplitude_spectrum = np.sqrt(kanai_tajimi_spectrum(freq, omega_g, zeta_g, S0))
+
+    # Construct complex spectrum with random phase
+    complex_spectrum = amplitude_spectrum * np.exp(1j * random_phase)
+
+    # Ensure DC component is zero (no constant offset)
+    complex_spectrum[0] = 0
+
+    # IFFT to time domain
+    acceleration = np.fft.irfft(complex_spectrum, n=n_steps)
+
+    # Apply temporal envelope (Jennings-type)
+    t1 = duration * 0.15  # Rise time (15% of duration)
+    t2 = duration * 0.70  # Start of decay (70% of duration)
 
     envelope = np.ones(n_steps)
+
     # Exponential rise
     rise_mask = time < t1
     envelope[rise_mask] = (time[rise_mask] / t1) ** 2
 
     # Exponential decay
     decay_mask = time > t2
-    c = 0.4  # Decay parameter
+    c = 0.5  # Decay parameter
     envelope[decay_mask] = np.exp(-c * (time[decay_mask] - t2))
 
     # Apply envelope
-    acceleration = filtered * envelope
+    acceleration = acceleration * envelope
 
     # Scale to target PGA
     current_pga = np.max(np.abs(acceleration))
-    if current_pga > 0:
+    if current_pga > 1e-6:  # Avoid division by very small numbers
         acceleration = acceleration * (pga_target / current_pga)
+    else:
+        print(f"Warning: Generated acceleration too small, regenerating...")
+        return generate_earthquake_frequency_domain(duration, dt, pga_target, omega_g, zeta_g, seed=seed+1 if seed else None)
 
-    return time, acceleration
+    # Sanity check: verify no NaN or Inf values
+    if np.any(np.isnan(acceleration)) or np.any(np.isinf(acceleration)):
+        print(f"Warning: NaN or Inf detected, regenerating...")
+        return generate_earthquake_frequency_domain(duration, dt, pga_target, omega_g, zeta_g, seed=seed+1 if seed else None)
 
-
-def generate_clough_penzien_earthquake(duration, dt, pga_target, omega_g, zeta_g, omega_f, zeta_f, seed=None):
-    """
-    Generate synthetic earthquake using Clough-Penzien spectrum
-    (More sophisticated - includes high-pass filter to remove low frequencies)
-
-    Parameters:
-    - omega_f: high-pass filter frequency (rad/s)
-    - zeta_f: high-pass filter damping
-    """
-    if seed is not None:
-        np.random.seed(seed)
-
-    # Generate white noise
-    n_steps = int(duration / dt)
-    white_noise = np.random.randn(n_steps)
-
-    # Kanai-Tajimi filter
-    num_kt = [omega_g**2]
-    den_kt = [1, 2*zeta_g*omega_g, omega_g**2]
-
-    kt_filtered = signal.lfilter(num_kt, den_kt, white_noise)
-
-    # High-pass filter (Clough-Penzien)
-    num_hp = [1, 0, 0]
-    den_hp = [1, 2*zeta_f*omega_f, omega_f**2]
-
-    cp_filtered = signal.lfilter(num_hp, den_hp, kt_filtered)
-
-    # Apply envelope
-    time = np.arange(n_steps) * dt
-    t1 = duration * 0.15
-    t2 = duration * 0.7
-
-    envelope = np.ones(n_steps)
-    rise_mask = time < t1
-    envelope[rise_mask] = (time[rise_mask] / t1) ** 2
-
-    decay_mask = time > t2
-    c = 0.4
-    envelope[decay_mask] = np.exp(-c * (time[decay_mask] - t2))
-
-    acceleration = cp_filtered * envelope
-
-    # Scale to target PGA
-    current_pga = np.max(np.abs(acceleration))
-    if current_pga > 0:
-        acceleration = acceleration * (pga_target / current_pga)
+    # Sanity check: verify realistic range (earthquakes don't exceed ~2g typically)
+    max_accel_g = np.max(np.abs(acceleration)) / 9.81
+    if max_accel_g > 2.0:
+        print(f"Warning: Unrealistic PGA {max_accel_g:.2f}g, regenerating...")
+        return generate_earthquake_frequency_domain(duration, dt, pga_target, omega_g, zeta_g, seed=seed+1 if seed else None)
 
     return time, acceleration
 
@@ -146,36 +158,44 @@ def generate_earthquake_variants(magnitude_name, pga_g, n_variants=3, duration=4
     pga_mps2 = pga_g * 9.81  # Convert to m/s²
 
     # Frequency parameters based on magnitude
-    # Larger earthquakes have lower frequency content
+    # Larger earthquakes have lower predominant frequencies
     freq_params = {
-        "M4.5": {"omega_g": 2*np.pi*3.0, "zeta_g": 0.6, "omega_f": 2*np.pi*0.5, "zeta_f": 0.6},
-        "M5.7": {"omega_g": 2*np.pi*2.5, "zeta_g": 0.6, "omega_f": 2*np.pi*0.4, "zeta_f": 0.6},
-        "M7.4": {"omega_g": 2*np.pi*2.0, "zeta_g": 0.7, "omega_f": 2*np.pi*0.3, "zeta_f": 0.6},
-        "M8.4": {"omega_g": 2*np.pi*1.5, "zeta_g": 0.7, "omega_f": 2*np.pi*0.2, "zeta_f": 0.6},
+        "M4.5": {"omega_g": 2*np.pi*4.0, "zeta_g": 0.6},   # 4 Hz predominant
+        "M5.7": {"omega_g": 2*np.pi*3.0, "zeta_g": 0.65},  # 3 Hz predominant
+        "M7.4": {"omega_g": 2*np.pi*2.0, "zeta_g": 0.7},   # 2 Hz predominant
+        "M8.4": {"omega_g": 2*np.pi*1.5, "zeta_g": 0.75},  # 1.5 Hz predominant
     }
 
     params = freq_params[magnitude_name]
     variants = []
 
     for i in range(n_variants):
-        seed = hash(f"{magnitude_name}_{pga_g}_{i}") % (2**31)
+        # Use deterministic seed for reproducibility
+        seed = hash(f"{magnitude_name}_{pga_g}_{i}_v2") % (2**31)
 
-        time, accel = generate_clough_penzien_earthquake(
+        time, accel = generate_earthquake_frequency_domain(
             duration, dt, pga_mps2,
             params["omega_g"], params["zeta_g"],
-            params["omega_f"], params["zeta_f"],
             seed=seed
         )
 
         variants.append((time, accel))
 
-        print(f"   Generated {magnitude_name} variant {i+1}: PGA = {np.max(np.abs(accel))/9.81:.3f}g")
+        actual_pga_g = np.max(np.abs(accel)) / 9.81
+        print(f"   Generated {magnitude_name} variant {i+1}: PGA = {actual_pga_g:.3f}g (target: {pga_g:.3f}g)")
 
     return variants
 
 
 def save_earthquake_csv(time, acceleration, filename):
     """Save earthquake data to CSV format matching PEER format"""
+    # Sanity check before saving
+    if np.any(np.isnan(acceleration)) or np.any(np.isinf(acceleration)):
+        raise ValueError(f"Cannot save {filename}: contains NaN or Inf values!")
+
+    if np.max(np.abs(acceleration)) > 100:  # > 10g is unrealistic
+        raise ValueError(f"Cannot save {filename}: unrealistic acceleration values!")
+
     # Create data array with time and acceleration
     data = np.column_stack([time, acceleration])
 
@@ -198,7 +218,8 @@ def plot_comparison(original_file, synthetic_variants, magnitude_name, pga_g):
         orig_accel = orig_data[:, 1]
     except:
         print(f"   Warning: Could not load {original_file}")
-        return
+        orig_time = synthetic_variants[0][0]
+        orig_accel = np.zeros_like(synthetic_variants[0][1])
 
     # Plot 1: Time histories
     ax = axes[0, 0]
@@ -210,6 +231,7 @@ def plot_comparison(original_file, synthetic_variants, magnitude_name, pga_g):
     ax.set_title('Time Histories')
     ax.legend()
     ax.grid(True, alpha=0.3)
+    ax.set_ylim([-pga_g*1.5, pga_g*1.5])  # Reasonable limits
 
     # Plot 2: Fourier spectra
     ax = axes[0, 1]
@@ -250,12 +272,14 @@ def plot_comparison(original_file, synthetic_variants, magnitude_name, pga_g):
 
     # Plot 4: Cumulative energy
     ax = axes[1, 1]
-    orig_energy = np.cumsum(orig_accel**2) / np.sum(orig_accel**2)
-    ax.plot(orig_time, orig_energy, 'k-', linewidth=2, label='Original (Test)', alpha=0.7)
+    if np.sum(orig_accel**2) > 0:
+        orig_energy = np.cumsum(orig_accel**2) / np.sum(orig_accel**2)
+        ax.plot(orig_time, orig_energy, 'k-', linewidth=2, label='Original (Test)', alpha=0.7)
 
     for i, (time, accel) in enumerate(synthetic_variants):
-        energy = np.cumsum(accel**2) / np.sum(accel**2)
-        ax.plot(time, energy, '--', label=f'Synthetic {i+1} (Train)', alpha=0.6)
+        if np.sum(accel**2) > 0:
+            energy = np.cumsum(accel**2) / np.sum(accel**2)
+            ax.plot(time, energy, '--', label=f'Synthetic {i+1} (Train)', alpha=0.6)
 
     ax.set_xlabel('Time (s)')
     ax.set_ylabel('Normalized Cumulative Energy')
@@ -274,10 +298,11 @@ def main():
     """Generate training earthquake dataset"""
 
     print("="*70)
-    print("  SYNTHETIC TRAINING EARTHQUAKE GENERATION")
+    print("  SYNTHETIC TRAINING EARTHQUAKE GENERATION (STABLE VERSION)")
     print("="*70)
     print("\nGenerating new earthquakes with same magnitudes as test set,")
     print("but different waveforms to prevent memorization.\n")
+    print("Using FREQUENCY-DOMAIN method for numerical stability.\n")
 
     # Define target earthquakes matching test set
     earthquakes = [
@@ -332,10 +357,7 @@ def main():
 
         # Plot comparison with original
         original_path = eq["original"]
-        if os.path.exists(original_path):
-            plot_comparison(original_path, variants, eq["magnitude"], eq["pga_g"])
-        else:
-            print(f"   Warning: Original file not found: {original_path}")
+        plot_comparison(original_path, variants, eq["magnitude"], eq["pga_g"])
 
     print("\n" + "="*70)
     print("  GENERATION COMPLETE!")
@@ -343,10 +365,11 @@ def main():
     print(f"\nGenerated {sum(eq['n_variants'] for eq in earthquakes)} training earthquakes")
     print(f"Location: {output_dir}/")
     print("\nNext steps:")
-    print("1. Verify comparison plots to ensure synthetic data quality")
-    print("2. Train model using: training_set/TRAIN_*.csv")
-    print("3. Test model using: PEER_*.csv (original test set)")
-    print("\nThis ensures training data ≠ testing data at the fundamental level!")
+    print("1. Verify comparison plots - ensure synthetic data looks realistic")
+    print("2. Check that PGAs match targets (within ±5%)")
+    print("3. Train model using: training_set/TRAIN_*.csv")
+    print("4. Test model using: PEER_*.csv (held-out test set)")
+    print("\nThis ensures training data ≠ testing data!")
     print("="*70 + "\n")
 
 
