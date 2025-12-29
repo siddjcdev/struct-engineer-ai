@@ -392,8 +392,15 @@ class ImprovedTMDBuildingEnv(gym.Env):
         # For each floor, get its max drift over time
         max_drift_per_floor = np.max(drift_array, axis=0)  # Shape: (n_floors,)
 
-        if len(max_drift_per_floor) > 0 and np.mean(max_drift_per_floor) > 1e-10:
-            DCR = np.max(max_drift_per_floor) / np.mean(max_drift_per_floor)
+        if len(max_drift_per_floor) > 0:
+            sorted_peaks = np.sort(max_drift_per_floor)
+            percentile_75 = np.percentile(sorted_peaks, 75)
+            max_peak = np.max(max_drift_per_floor)
+
+            if percentile_75 > 1e-10:
+                DCR = max_peak / percentile_75
+            else:
+                DCR = 0.0
         else:
             DCR = 0.0
 
