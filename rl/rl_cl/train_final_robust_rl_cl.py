@@ -23,7 +23,7 @@ from datetime import datetime
 from stable_baselines3 import SAC
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
-from rl.rl_cl.tmd_environment import make_improved_tmd_env
+from tmd_environment import make_improved_tmd_env
 import matplotlib.pyplot as plt
 import glob
 
@@ -42,7 +42,7 @@ def train_final_robust_rl_cl():
     print("   → Ensures model doesn't memorize test set!\n")
 
     # Find training files
-    train_dir = "matlab/datasets/training_set"
+    train_dir = "../../matlab/datasets/training_set"
     train_files = {
         "M4.5": sorted(glob.glob(f"{train_dir}/TRAIN_M4.5_*.csv")),
         "M5.7": sorted(glob.glob(f"{train_dir}/TRAIN_M5.7_*.csv")),
@@ -96,7 +96,7 @@ def train_final_robust_rl_cl():
     print("   - Training variant: randomly sampled each episode")
 
     # Create directories
-    os.makedirs("simple_rl_models", exist_ok=True)
+    os.makedirs("rl_cl_robust_models", exist_ok=True)
 
     # Training
     start_time = datetime.now()
@@ -176,7 +176,7 @@ def train_final_robust_rl_cl():
         )
 
         # Save
-        save_path = f"simple_rl_models/stage{stage_num}_{force_limit//1000}kN_final_robust.zip"
+        save_path = f"rl_cl_robust_models/stage{stage_num}_{force_limit//1000}kN_final_robust.zip"
         model.save(save_path)
         print(f"\n💾 Saved: {save_path}")
 
@@ -206,7 +206,7 @@ def train_final_robust_rl_cl():
 
     # Final
     training_time = datetime.now() - start_time
-    final_path = "simple_rl_models/perfect_rl_final_robust.zip"
+    final_path = "rl_cl_robust_models/perfect_rl_final_robust.zip"
     model.save(final_path)
 
     print("="*70)
@@ -223,7 +223,7 @@ def train_final_robust_rl_cl():
     print(f"   • Generalize to unseen earthquakes")
     print(f"   • Handle real-world stress conditions")
     print(f"\n   Next: Copy to API and run full comparison!")
-    print(f"   Command: cp {final_path} restapi/rl_cl/simple_rl_models/")
+    print(f"   Command: cp {final_path} restapi/rl_cl/rl_cl_robust_models/")
     print("="*70 + "\n")
 
     return model
