@@ -52,10 +52,10 @@ def train_final_robust_rl_cl():
 
     # Test files (held-out)
     test_files = {
-        "M4.5": "matlab/datasets/PEER_small_M4.5_PGA0.25g.csv",
-        "M5.7": "matlab/datasets/PEER_moderate_M5.7_PGA0.35g.csv",
-        "M7.4": "matlab/datasets/PEER_high_M7.4_PGA0.75g.csv",
-        "M8.4": "matlab/datasets/PEER_insane_M8.4_PGA0.9g.csv"
+        "M4.5": "../../matlab/datasets/PEER_small_M4.5_PGA0.25g.csv",
+        "M5.7": "../../matlab/datasets/PEER_moderate_M5.7_PGA0.35g.csv",
+        "M7.4": "../../matlab/datasets/PEER_high_M7.4_PGA0.75g.csv",
+        "M8.4": "../../matlab/datasets/PEER_insane_M8.4_PGA0.9g.csv"
     }
 
     # Verify training files exist
@@ -64,7 +64,7 @@ def train_final_robust_rl_cl():
         if not files:
             print(f"   ❌ {mag}: No training files found!")
             print(f"\n   ERROR: Run generate_training_earthquakes.py first!")
-            print(f"   Command: cd matlab/datasets && python generate_training_earthquakes.py\n")
+            print(f"   Command: cd ../../matlab/datasets && python generate_training_earthquakes.py\n")
             return None
         print(f"   ✓ {mag}: {len(files)} variants")
 
