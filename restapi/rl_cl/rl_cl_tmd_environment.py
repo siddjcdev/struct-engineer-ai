@@ -98,6 +98,9 @@ class ImprovedTMDBuildingEnv(gym.Env):
         self.displacement_history = []  # For RMS calculation
         self.force_history = []  # For peak and mean force
         self.drift_history = []  # For max drift and DCR
+
+        # Track peak drift per floor for consistent DCR calculation
+        self.peak_drift_per_floor = np.zeros(self.n_floors)
     
     
     def _build_mass_matrix(self) -> np.ndarray:
@@ -128,9 +131,13 @@ class ImprovedTMDBuildingEnv(gym.Env):
     
     def _build_damping_matrix(self) -> np.ndarray:
         eigenvalues = np.linalg.eigvals(np.linalg.solve(self.M, self.K))
-        omega = np.sqrt(np.real(eigenvalues[eigenvalues > 0]))
+        # Use small positive threshold for numerical stability
+        omega = np.sqrt(np.real(eigenvalues[eigenvalues > 1e-10]))
         omega = np.sort(omega)
-        
+
+        if len(omega) < 2:
+            raise ValueError(f"System has fewer than 2 positive eigenvalues: {len(omega)}. Check mass/stiffness matrices.")
+
         omega1 = omega[0]
         omega2 = omega[1]
         zeta = self.damping_ratio
@@ -199,6 +206,9 @@ class ImprovedTMDBuildingEnv(gym.Env):
         self.displacement_history = []
         self.force_history = []
         self.drift_history = []
+
+        # Clear peak drift tracking
+        self.peak_drift_per_floor = np.zeros(self.n_floors)
 
         obs = np.array([
             self.displacement[11],
@@ -276,22 +286,23 @@ class ImprovedTMDBuildingEnv(gym.Env):
         # 5. Comfort: Penalize high accelerations
         acceleration_penalty = -0.1 * abs(self.roof_acceleration)
 
-        # 6. Drift distribution: Penalize drift concentration (DCR)
-        # Calculate interstory drifts from current floor displacements
-        floor_displacements = self.displacement[:self.n_floors]
-        floor_drifts = np.diff(floor_displacements)  # Interstory drifts
+        # 6. Drift Concentration Ratio (DCR) - CORRECTED VERSION
+        # Track peak drift for each floor over time, then calculate DCR
+        # This matches the episode-level DCR metric exactly
+        floor_drifts = self._compute_interstory_drifts(self.displacement[:self.n_floors])
+        self.peak_drift_per_floor = np.maximum(self.peak_drift_per_floor, floor_drifts)
 
-        if len(floor_drifts) > 0:
-            abs_drifts = np.abs(floor_drifts)
-            sorted_drifts = np.sort(abs_drifts)
-            percentile_75 = np.percentile(sorted_drifts, 75)
-            max_drift = np.max(abs_drifts)
+        # Calculate DCR from peak drifts (same formula as get_episode_metrics)
+        if np.max(self.peak_drift_per_floor) > 1e-10:
+            sorted_peaks = np.sort(self.peak_drift_per_floor)
+            percentile_75 = np.percentile(sorted_peaks, 75)
+            max_peak = np.max(self.peak_drift_per_floor)
 
             if percentile_75 > 1e-10:
-                instantaneous_dcr = max_drift / percentile_75
-                # IMPROVED: Squared penalty makes high DCR exponentially worse
+                current_dcr = max_peak / percentile_75
+                # Penalize DCR deviation from ideal (1.0 = perfectly uniform)
                 # DCR=1.0 → 0, DCR=2.0 → -0.5, DCR=3.0 → -2.0
-                dcr_deviation = max(0, instantaneous_dcr - 1.0)
+                dcr_deviation = max(0, current_dcr - 1.0)
                 dcr_penalty = -0.5 * (dcr_deviation ** 2)
             else:
                 dcr_penalty = 0.0
@@ -344,7 +355,8 @@ class ImprovedTMDBuildingEnv(gym.Env):
                 'velocity': velocity_penalty,
                 'force': force_penalty,
                 'smoothness': smoothness_penalty,
-                'acceleration': acceleration_penalty
+                'acceleration': acceleration_penalty,
+                'dcr': dcr_penalty
             }
         }
         
@@ -413,7 +425,7 @@ class ImprovedTMDBuildingEnv(gym.Env):
 
         # 4. DCR (Drift Concentration Ratio)
         # For each floor, get its max drift over time
-        max_drift_per_floor = np.max(drift_array, axis=0)  # Shape: (n_floors,)
+        max_drift_per_floor = np.max(np.abs(drift_array), axis=0)  # Shape: (n_floors,)
 
         if len(max_drift_per_floor) > 0:
             sorted_peaks = np.sort(max_drift_per_floor)

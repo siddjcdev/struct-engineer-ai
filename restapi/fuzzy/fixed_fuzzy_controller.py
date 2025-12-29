@@ -570,7 +570,7 @@ class FixedFuzzyTMDController:
         max_drift = np.max(drift_history)
 
         # 4. DCR (Drift Concentration Ratio)
-        max_drift_per_floor = np.max(drift_history, axis=0)
+        max_drift_per_floor = np.max(np.abs(drift_history), axis=0)
         if len(max_drift_per_floor) > 0:
             sorted_peaks = np.sort(max_drift_per_floor)
             percentile_75 = np.percentile(sorted_peaks, 75)

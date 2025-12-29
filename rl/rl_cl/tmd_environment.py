@@ -30,28 +30,14 @@ class ImprovedTMDBuildingEnv(gym.Env):
         earthquake_data: np.ndarray,
         dt: float = 0.02,
         max_force: float = 150000.0,  # Start with 50 kN (will use curriculum)
-        earthquake_name: str = "Unknown",
-        # ROBUSTNESS AUGMENTATION PARAMETERS
-        sensor_noise_std: float = 0.0,  # Standard deviation for sensor noise (as fraction of signal)
-        actuator_noise_std: float = 0.0,  # Standard deviation for actuator noise
-        latency_steps: int = 0,  # Number of timesteps delay (0-2 for 0-40ms)
-        dropout_prob: float = 0.0  # Probability of control signal dropout
+        earthquake_name: str = "Unknown"
     ):
         super().__init__()
-
+        
         self.earthquake_data = earthquake_data
         self.dt = dt
         self.max_force = max_force
         self.earthquake_name = earthquake_name
-
-        # Robustness parameters
-        self.sensor_noise_std = sensor_noise_std
-        self.actuator_noise_std = actuator_noise_std
-        self.latency_steps = latency_steps
-        self.dropout_prob = dropout_prob
-
-        # Latency buffer for delayed actions
-        self.action_buffer = [0.0] * (latency_steps + 1) if latency_steps > 0 else [0.0]
         
         # Building parameters
         self.n_floors = 12
@@ -109,11 +95,12 @@ class ImprovedTMDBuildingEnv(gym.Env):
         self.roof_acceleration = 0.0
 
         # NEW: Track additional metrics for API responses
-        self.displacement_history = []  # For RMS calculation (roof only)
+        self.displacement_history = []  # For RMS calculation
         self.force_history = []  # For peak and mean force
         self.drift_history = []  # For max drift and DCR
-        self.all_floor_displacement_history = []  # For peak displacement by floor
-        self.roof_acceleration_history = []  # For RMS roof acceleration
+
+        # Track peak drift per floor for consistent DCR calculation
+        self.peak_drift_per_floor = np.zeros(self.n_floors)
     
     
     def _build_mass_matrix(self) -> np.ndarray:
@@ -144,9 +131,13 @@ class ImprovedTMDBuildingEnv(gym.Env):
     
     def _build_damping_matrix(self) -> np.ndarray:
         eigenvalues = np.linalg.eigvals(np.linalg.solve(self.M, self.K))
-        omega = np.sqrt(np.real(eigenvalues[eigenvalues > 0]))
+        # Use small positive threshold for numerical stability
+        omega = np.sqrt(np.real(eigenvalues[eigenvalues > 1e-10]))
         omega = np.sort(omega)
-        
+
+        if len(omega) < 2:
+            raise ValueError(f"System has fewer than 2 positive eigenvalues: {len(omega)}. Check mass/stiffness matrices.")
+
         omega1 = omega[0]
         omega2 = omega[1]
         zeta = self.damping_ratio
@@ -215,8 +206,9 @@ class ImprovedTMDBuildingEnv(gym.Env):
         self.displacement_history = []
         self.force_history = []
         self.drift_history = []
-        self.all_floor_displacement_history = []
-        self.roof_acceleration_history = []
+
+        # Clear peak drift tracking
+        self.peak_drift_per_floor = np.zeros(self.n_floors)
 
         obs = np.array([
             self.displacement[11],
@@ -237,23 +229,10 @@ class ImprovedTMDBuildingEnv(gym.Env):
         self,
         action: np.ndarray
     ) -> Tuple[np.ndarray, float, bool, bool, dict]:
-
+        
         # Scale action to actual force
         control_force = float(action[0]) * self.max_force
-
-        # ROBUSTNESS AUGMENTATION 1: Dropout (randomly zero control signal)
-        if self.dropout_prob > 0 and np.random.random() < self.dropout_prob:
-            control_force = 0.0
-
-        # ROBUSTNESS AUGMENTATION 2: Actuator noise
-        if self.actuator_noise_std > 0:
-            control_force += np.random.normal(0, self.actuator_noise_std * self.max_force)
-
-        # ROBUSTNESS AUGMENTATION 3: Latency (use delayed action)
-        if self.latency_steps > 0:
-            self.action_buffer.append(control_force)
-            control_force = self.action_buffer.pop(0)  # Use oldest action
-
+        
         # Get ground acceleration
         ag = self.earthquake_data[self.current_step]
         
@@ -277,17 +256,10 @@ class ImprovedTMDBuildingEnv(gym.Env):
         roof_vel = self.velocity[11]
         tmd_disp = self.displacement[12]
         tmd_vel = self.velocity[12]
-
+        
         # IMPROVEMENT: Track roof acceleration
         self.roof_acceleration = self.acceleration[11]
-
-        # ROBUSTNESS AUGMENTATION 4: Sensor noise
-        if self.sensor_noise_std > 0:
-            roof_disp += np.random.normal(0, self.sensor_noise_std * abs(roof_disp + 1e-6))
-            roof_vel += np.random.normal(0, self.sensor_noise_std * abs(roof_vel + 1e-6))
-            tmd_disp += np.random.normal(0, self.sensor_noise_std * abs(tmd_disp + 1e-6))
-            tmd_vel += np.random.normal(0, self.sensor_noise_std * abs(tmd_vel + 1e-6))
-
+        
         # Observation
         obs = np.array([roof_disp, roof_vel, tmd_disp, tmd_vel], dtype=np.float32)
         
@@ -314,24 +286,24 @@ class ImprovedTMDBuildingEnv(gym.Env):
         # 5. Comfort: Penalize high accelerations
         acceleration_penalty = -0.1 * abs(self.roof_acceleration)
 
-        # 6. Drift distribution: Penalize drift concentration (DCR)
-        # Calculate interstory drifts from current floor displacements
-        floor_displacements = self.displacement[:self.n_floors]
-        floor_drifts = np.diff(floor_displacements)  # Interstory drifts
+        # 6. Drift Concentration Ratio (DCR) - CORRECTED VERSION
+        # Track peak drift for each floor over time, then calculate DCR
+        # This matches the episode-level DCR metric exactly
+        floor_drifts = self._compute_interstory_drifts(self.displacement[:self.n_floors])
+        self.peak_drift_per_floor = np.maximum(self.peak_drift_per_floor, floor_drifts)
 
-        if len(floor_drifts) > 0:
-            abs_drifts = np.abs(floor_drifts)
-            sorted_drifts = np.sort(abs_drifts)
-            percentile_75 = np.percentile(sorted_drifts, 75)
-            max_drift = np.max(abs_drifts)
+        # Calculate DCR from peak drifts (same formula as get_episode_metrics)
+        if np.max(self.peak_drift_per_floor) > 1e-10:
+            sorted_peaks = np.sort(self.peak_drift_per_floor)
+            percentile_75 = np.percentile(sorted_peaks, 75)
+            max_peak = np.max(self.peak_drift_per_floor)
 
             if percentile_75 > 1e-10:
-                instantaneous_dcr = max_drift / percentile_75
-                # REDUCED: Lower weight to prevent brittle control policies
-                # DCR=1.0 → 0, DCR=2.0 → -0.1, DCR=3.0 → -0.4
-                # This encourages uniform drift WITHOUT sacrificing robustness
-                dcr_deviation = max(0, instantaneous_dcr - 1.0)
-                dcr_penalty = -0.1 * (dcr_deviation ** 2)
+                current_dcr = max_peak / percentile_75
+                # Penalize DCR deviation from ideal (1.0 = perfectly uniform)
+                # DCR=1.0 → 0, DCR=2.0 → -0.5, DCR=3.0 → -2.0
+                dcr_deviation = max(0, current_dcr - 1.0)
+                dcr_penalty = -0.5 * (dcr_deviation ** 2)
             else:
                 dcr_penalty = 0.0
         else:
@@ -359,8 +331,6 @@ class ImprovedTMDBuildingEnv(gym.Env):
         # NEW: Track metrics for final reporting
         self.displacement_history.append(roof_disp)
         self.force_history.append(control_force)
-        self.all_floor_displacement_history.append(self.displacement[:self.n_floors].copy())  # Track all 12 floors
-        self.roof_acceleration_history.append(self.acceleration[11])  # Track roof acceleration
 
         # Compute interstory drifts for all floors
         drifts = self._compute_interstory_drifts(self.displacement[:self.n_floors])
@@ -385,7 +355,8 @@ class ImprovedTMDBuildingEnv(gym.Env):
                 'velocity': velocity_penalty,
                 'force': force_penalty,
                 'smoothness': smoothness_penalty,
-                'acceleration': acceleration_penalty
+                'acceleration': acceleration_penalty,
+                'dcr': dcr_penalty
             }
         }
         
@@ -435,9 +406,7 @@ class ImprovedTMDBuildingEnv(gym.Env):
                 'max_drift': 0.0,
                 'DCR': 0.0,
                 'peak_force': 0.0,
-                'mean_force': 0.0,
-                'peak_disp_by_floor': [0.0] * self.n_floors,
-                'rms_roof_accel': 0.0
+                'mean_force': 0.0
             }
 
         # Convert to numpy arrays
@@ -456,7 +425,7 @@ class ImprovedTMDBuildingEnv(gym.Env):
 
         # 4. DCR (Drift Concentration Ratio)
         # For each floor, get its max drift over time
-        max_drift_per_floor = np.max(drift_array, axis=0)  # Shape: (n_floors,)
+        max_drift_per_floor = np.max(np.abs(drift_array), axis=0)  # Shape: (n_floors,)
 
         if len(max_drift_per_floor) > 0:
             sorted_peaks = np.sort(max_drift_per_floor)
@@ -474,14 +443,6 @@ class ImprovedTMDBuildingEnv(gym.Env):
         peak_force = np.max(np.abs(forces))
         mean_force = np.mean(np.abs(forces))
 
-        # 6. Peak displacement by floor
-        all_floor_displacements = np.array(self.all_floor_displacement_history)  # Shape: (timesteps, n_floors)
-        peak_disp_by_floor = np.max(np.abs(all_floor_displacements), axis=0)  # Max over time for each floor
-
-        # 7. RMS roof acceleration
-        roof_accelerations = np.array(self.roof_acceleration_history)
-        rms_roof_accel = np.sqrt(np.mean(roof_accelerations**2))
-
         return {
             'rms_roof_displacement': float(rms_roof),
             'peak_roof_displacement': float(peak_roof),
@@ -490,9 +451,7 @@ class ImprovedTMDBuildingEnv(gym.Env):
             'peak_force': float(peak_force),
             'mean_force': float(mean_force),
             'peak_force_kN': float(peak_force / 1000),
-            'mean_force_kN': float(mean_force / 1000),
-            'peak_disp_by_floor': peak_disp_by_floor.tolist(),  # NEW: Peak displacement at each floor
-            'rms_roof_accel': float(rms_roof_accel)             # NEW: RMS roof acceleration
+            'mean_force_kN': float(mean_force / 1000)
         }
 
 
@@ -507,14 +466,10 @@ class ImprovedTMDBuildingEnv(gym.Env):
 def make_improved_tmd_env(
     earthquake_file: str,
     earthquake_name: str = None,
-    max_force: float = 150000.0,
-    sensor_noise_std: float = 0.0,
-    actuator_noise_std: float = 0.0,
-    latency_steps: int = 0,
-    dropout_prob: float = 0.0
+    max_force: float = 150000.0
 ) -> ImprovedTMDBuildingEnv:
-    """Create improved TMD environment with optional robustness augmentation"""
-
+    """Create improved TMD environment"""
+    
     print(f"Loading earthquake data from {earthquake_file}...")
     data = np.loadtxt(earthquake_file, delimiter=',', skiprows=1)
     print(f"✅ Earthquake data loaded: {data.shape[0]} samples")
@@ -526,20 +481,16 @@ def make_improved_tmd_env(
     else:
         accelerations = data
         dt = 0.02
-
+    
     if earthquake_name is None:
         import os
         earthquake_name = os.path.basename(earthquake_file)
-
+    
     return ImprovedTMDBuildingEnv(
         earthquake_data=accelerations,
         dt=dt,
         max_force=max_force,
-        earthquake_name=earthquake_name,
-        sensor_noise_std=sensor_noise_std,
-        actuator_noise_std=actuator_noise_std,
-        latency_steps=latency_steps,
-        dropout_prob=dropout_prob
+        earthquake_name=earthquake_name
     )
 
 

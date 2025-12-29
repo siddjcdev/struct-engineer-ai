@@ -144,9 +144,13 @@ class TMDBuildingEnv(gym.Env):
         """Build Rayleigh damping matrix"""
         # Compute eigenvalues
         eigenvalues = np.linalg.eigvals(np.linalg.solve(self.M, self.K))
-        omega = np.sqrt(np.real(eigenvalues[eigenvalues > 0]))
+        # Use small positive threshold for numerical stability
+        omega = np.sqrt(np.real(eigenvalues[eigenvalues > 1e-10]))
         omega = np.sort(omega)
-        
+
+        if len(omega) < 2:
+            raise ValueError(f"System has fewer than 2 positive eigenvalues: {len(omega)}. Check mass/stiffness matrices.")
+
         omega1 = omega[0]
         omega2 = omega[1]
         zeta = self.damping_ratio
@@ -376,7 +380,7 @@ class TMDBuildingEnv(gym.Env):
 
         # 4. DCR (Drift Concentration Ratio)
         # For each floor, get its max drift over time
-        max_drift_per_floor = np.max(drift_array, axis=0)  # Shape: (n_floors,)
+        max_drift_per_floor = np.max(np.abs(drift_array), axis=0)  # Shape: (n_floors,)
 
         if len(max_drift_per_floor) > 0:
             sorted_peaks = np.sort(max_drift_per_floor)
