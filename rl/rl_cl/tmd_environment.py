@@ -279,14 +279,36 @@ class ImprovedTMDBuildingEnv(gym.Env):
         
         # 5. Comfort: Penalize high accelerations
         acceleration_penalty = -0.1 * abs(self.roof_acceleration)
-        
+
+        # 6. Drift distribution: Penalize drift concentration (DCR)
+        # Calculate interstory drifts from current floor displacements
+        floor_displacements = self.displacement[:self.n_floors]
+        floor_drifts = np.diff(floor_displacements)  # Interstory drifts
+
+        if len(floor_drifts) > 0:
+            abs_drifts = np.abs(floor_drifts)
+            sorted_drifts = np.sort(abs_drifts)
+            percentile_75 = np.percentile(sorted_drifts, 75)
+            max_drift = np.max(abs_drifts)
+
+            if percentile_75 > 1e-10:
+                instantaneous_dcr = max_drift / percentile_75
+                # Penalize deviation from ideal DCR=1.0
+                # Weight at 0.3x to encourage uniform drift without dominating displacement objective
+                dcr_penalty = -0.3 * (instantaneous_dcr - 1.0)
+            else:
+                dcr_penalty = 0.0
+        else:
+            dcr_penalty = 0.0
+
         # Combined reward
         reward = (
             displacement_penalty +
             velocity_penalty +
             force_penalty +
             smoothness_penalty +
-            acceleration_penalty
+            acceleration_penalty +
+            dcr_penalty
         )
         #IMPROVEMENT: Simplified reward to just displacement
         #reward = -abs(roof_disp)
