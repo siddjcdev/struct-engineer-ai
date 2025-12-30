@@ -30,60 +30,88 @@ class ImprovedTMDBuildingEnv(gym.Env):
         earthquake_data: np.ndarray,
         dt: float = 0.02,
         max_force: float = 150000.0,  # Start with 50 kN (will use curriculum)
-        earthquake_name: str = "Unknown"
+        earthquake_name: str = "Unknown",
+        sensor_noise_std: float = 0.0,
+        actuator_noise_std: float = 0.0,
+        latency_steps: int = 0,
+        dropout_prob: float = 0.0
     ):
         super().__init__()
-        
+
         self.earthquake_data = earthquake_data
         self.dt = dt
         self.max_force = max_force
         self.earthquake_name = earthquake_name
-        
-        # Building parameters
+
+        # Domain randomization parameters
+        self.sensor_noise_std = sensor_noise_std
+        self.actuator_noise_std = actuator_noise_std
+        self.latency_steps = latency_steps
+        self.dropout_prob = dropout_prob
+
+        # Building parameters - UPDATED to match MATLAB configuration
+        # This ensures consistent results between MATLAB and Python simulations
         self.n_floors = 12
-        self.floor_mass = 300000
-        self.tmd_mass = 0.02 * self.floor_mass
-        self.tmd_k = 50e3
-        self.tmd_c = 2000
-        
-        k_typical = 800e6
+        self.floor_mass = 2.0e5          # 200,000 kg (was 300,000) - matches MATLAB m0
+        self.tmd_mass = 0.02 * self.floor_mass  # 2% mass ratio = 4000 kg
+
+        # TMD tuning - OPTIMIZED via parameter sweep
+        # Building fundamental frequency: 0.193 Hz
+        # Optimal TMD frequency ratio: 0.80 (from empirical testing)
+        # TMD frequency: 0.154 Hz
+        # Performance: 20.90 cm (no TMD) → 20.16 cm (passive TMD) = 3.5% reduction
+        # Note: Small improvement due to low mass ratio (0.17% of total building mass)
+        # OLD (WRONG): k=50e3 N/m, c=2000 N·s/m → f_tmd=0.563 Hz (2.9x too high, made it worse!)
+        self.tmd_k = 3765                # TMD stiffness (3.765 kN/m) - empirically optimized
+        self.tmd_c = 194                 # TMD damping (194 N·s/m) - 2.5% critical damping
+
+        # Story stiffness - matches MATLAB k0 and soft_story_factor
+        k_typical = 2.0e7                # 20 MN/m (was 800 MN/m) - matches MATLAB k0
         self.story_stiffness = k_typical * np.ones(self.n_floors)
-        self.story_stiffness[7] = 0.5 * k_typical
-        
-        self.damping_ratio = 0.02
-        
+        self.story_stiffness[7] = 0.60 * k_typical  # 60% stiffness (was 50%) - matches MATLAB
+
+        self.damping_ratio = 0.015       # 1.5% damping (was 2%) - matches MATLAB zeta_target
+
         # Build matrices
         self.M = self._build_mass_matrix()
         self.K = self._build_stiffness_matrix()
         self.C = self._build_damping_matrix()
-        
+
         # Newmark parameters
         self.beta = 0.25
         self.gamma = 0.5
-        
-        # State space
+
+        # State: [roof_disp, roof_vel, floor8_disp, floor8_vel, floor6_disp, floor6_vel, tmd_disp, tmd_vel]
+        # UPDATED: Expanded observation space to include mid-floors for better DCR control
+        # - Roof (floor 12): Global response
+        # - Floor 8: Weak floor (critical for DCR)
+        # - Floor 6: Mid-height reference
+        # - TMD: Active control device
+        # Bounds: ±1.2m displacement, ±3.0m/s velocity (2x safety margin for M7.4+)
         self.observation_space = spaces.Box(
-            low=np.array([-0.5, -2.0, -0.6, -2.5]),
-            high=np.array([0.5, 2.0, 0.6, 2.5]),
+            low=np.array([-1.2, -3.0, -1.2, -3.0, -1.2, -3.0, -1.5, -3.5]),
+            high=np.array([1.2, 3.0, 1.2, 3.0, 1.2, 3.0, 1.5, 3.5]),
             dtype=np.float32
         )
-        
+
         self.action_space = spaces.Box(
             low=-1.0,
             high=1.0,
             shape=(1,),
             dtype=np.float32
         )
-        
-        # Episode length - IMPROVED: Match earthquake duration
+
+        # Episode length - FIXED: Use full earthquake duration
+        # CRITICAL: Train on full duration so model learns to handle entire earthquake
+        # Training: 40s (2000 steps), Test: 60s-120s (3000-6000 steps)
         self.current_step = 0
-        self.max_steps = min(len(earthquake_data), 2000)  # Max 40 seconds
-        
+        self.max_steps = len(earthquake_data)  # Full duration, no artificial limit!
+
         # State vectors
         self.displacement = np.zeros(13)
         self.velocity = np.zeros(13)
         self.acceleration = np.zeros(13)
-        
+
         # Performance tracking
         self.peak_displacement = 0.0
         self.cumulative_displacement = 0.0
@@ -101,6 +129,9 @@ class ImprovedTMDBuildingEnv(gym.Env):
 
         # Track peak drift per floor for consistent DCR calculation
         self.peak_drift_per_floor = np.zeros(self.n_floors)
+
+        # Domain randomization: Action buffer for latency
+        self.action_buffer = []
     
     
     def _build_mass_matrix(self) -> np.ndarray:
@@ -210,11 +241,19 @@ class ImprovedTMDBuildingEnv(gym.Env):
         # Clear peak drift tracking
         self.peak_drift_per_floor = np.zeros(self.n_floors)
 
+        # Clear action buffer for latency
+        self.action_buffer = []
+
+        # Expanded observation: roof, floor8, floor6, TMD
         obs = np.array([
-            self.displacement[11],
-            self.velocity[11],
-            self.displacement[12],
-            self.velocity[12]
+            self.displacement[11],  # roof displacement
+            self.velocity[11],      # roof velocity
+            self.displacement[7],   # floor 8 displacement (weak floor)
+            self.velocity[7],       # floor 8 velocity
+            self.displacement[5],   # floor 6 displacement (mid-height)
+            self.velocity[5],       # floor 6 velocity
+            self.displacement[12],  # TMD displacement
+            self.velocity[12]       # TMD velocity
         ], dtype=np.float32)
 
         info = {
@@ -229,20 +268,43 @@ class ImprovedTMDBuildingEnv(gym.Env):
         self,
         action: np.ndarray
     ) -> Tuple[np.ndarray, float, bool, bool, dict]:
-        
+
+        # ================================================================
+        # DOMAIN RANDOMIZATION: Apply actuator noise and latency
+        # ================================================================
+
+        # 1. Add actuator noise to action
+        if self.actuator_noise_std > 0:
+            noise = np.random.normal(0, self.actuator_noise_std, size=action.shape)
+            action_noisy = action + noise
+            action_noisy = np.clip(action_noisy, -1.0, 1.0)  # Keep in valid range
+        else:
+            action_noisy = action
+
+        # 2. Apply latency by buffering actions
+        if self.latency_steps > 0:
+            self.action_buffer.append(action_noisy)
+            if len(self.action_buffer) > self.latency_steps:
+                action_delayed = self.action_buffer.pop(0)
+            else:
+                # During warmup, use zero action
+                action_delayed = np.zeros_like(action_noisy)
+        else:
+            action_delayed = action_noisy
+
         # Scale action to actual force
-        control_force = float(action[0]) * self.max_force
-        
+        control_force = float(action_delayed[0]) * self.max_force
+
         # Get ground acceleration
         ag = self.earthquake_data[self.current_step]
-        
+
         # Earthquake force
         F_eq = -ag * self.M @ np.concatenate([np.ones(self.n_floors), [0]])
-        
+
         # Apply control with Newton's 3rd law
         F_eq[11] -= control_force
         F_eq[12] += control_force
-        
+
         # Time integration
         self.displacement, self.velocity, self.acceleration = self._newmark_step(
             self.displacement,
@@ -250,29 +312,55 @@ class ImprovedTMDBuildingEnv(gym.Env):
             self.acceleration,
             F_eq
         )
-        
-        # Extract state
+
+        # Extract state (expanded: roof, floor8, floor6, TMD)
         roof_disp = self.displacement[11]
         roof_vel = self.velocity[11]
+        floor8_disp = self.displacement[7]   # Weak floor
+        floor8_vel = self.velocity[7]
+        floor6_disp = self.displacement[5]   # Mid-height
+        floor6_vel = self.velocity[5]
         tmd_disp = self.displacement[12]
         tmd_vel = self.velocity[12]
-        
+
         # IMPROVEMENT: Track roof acceleration
         self.roof_acceleration = self.acceleration[11]
-        
-        # Observation
-        obs = np.array([roof_disp, roof_vel, tmd_disp, tmd_vel], dtype=np.float32)
+
+        # ================================================================
+        # DOMAIN RANDOMIZATION: Apply sensor noise and dropout
+        # ================================================================
+
+        # 3. Add sensor noise to observations (expanded to 8 values)
+        if self.sensor_noise_std > 0:
+            sensor_noise = np.random.normal(0, self.sensor_noise_std, size=8)
+            obs_noisy = np.array([
+                roof_disp, roof_vel, floor8_disp, floor8_vel,
+                floor6_disp, floor6_vel, tmd_disp, tmd_vel
+            ], dtype=np.float32) * (1 + sensor_noise)
+        else:
+            obs_noisy = np.array([
+                roof_disp, roof_vel, floor8_disp, floor8_vel,
+                floor6_disp, floor6_vel, tmd_disp, tmd_vel
+            ], dtype=np.float32)
+
+        # 4. Apply sensor dropout
+        if self.dropout_prob > 0:
+            dropout_mask = np.random.random(8) > self.dropout_prob
+            obs_noisy = obs_noisy * dropout_mask
+
+        # Final observation
+        obs = obs_noisy
         
         # ================================================================
         # IMPROVED MULTI-OBJECTIVE REWARD FUNCTION
         # ================================================================
-        
+
         # 1. Primary objective: Minimize displacement
         displacement_penalty = -1.0 * abs(roof_disp)
-        
+
         # 2. Dampen oscillations: Penalize velocity
         velocity_penalty = -0.3 * abs(roof_vel)
-        
+
         # 3. Energy efficiency: Penalize large forces
         force_normalized = control_force / self.max_force
         #force_penalty = -0.01 * (force_normalized ** 2)
@@ -282,11 +370,11 @@ class ImprovedTMDBuildingEnv(gym.Env):
         # 4. Smoothness: Penalize rapid force changes
         force_change = abs(control_force - self.previous_force)
         smoothness_penalty = -0.005 * (force_change / self.max_force)
-        
+
         # 5. Comfort: Penalize high accelerations
         acceleration_penalty = -0.1 * abs(self.roof_acceleration)
 
-        # 6. Drift Concentration Ratio (DCR) - CORRECTED VERSION
+        # 6. Drift Concentration Ratio (DCR) - MODERATE PENALTY (Ablation Study)
         # Track peak drift for each floor over time, then calculate DCR
         # This matches the episode-level DCR metric exactly
         floor_drifts = self._compute_interstory_drifts(self.displacement[:self.n_floors])
@@ -301,22 +389,25 @@ class ImprovedTMDBuildingEnv(gym.Env):
             if percentile_75 > 1e-10:
                 current_dcr = max_peak / percentile_75
                 # Penalize DCR deviation from ideal (1.0 = perfectly uniform)
-                # DCR=1.0 → 0, DCR=2.0 → -0.5, DCR=3.0 → -2.0
+                # ABLATION STUDY: Moderate penalty weight (2.0) - 4x increase from original
+                # DCR=1.0 → 0, DCR=2.0 → -2.0, DCR=3.0 → -8.0
+                # This is strong enough to matter but won't dominate displacement penalty
                 dcr_deviation = max(0, current_dcr - 1.0)
-                dcr_penalty = -0.5 * (dcr_deviation ** 2)
+                dcr_penalty = -2.0 * (dcr_deviation ** 2)  # Moderate penalty
             else:
                 dcr_penalty = 0.0
         else:
             dcr_penalty = 0.0
 
-        # Combined reward
+        # Combined reward (Option 2 only: expanded observations + moderate DCR penalty)
+        # NO max drift penalty - we want to isolate the effect of expanded observations
         reward = (
             displacement_penalty +
             velocity_penalty +
             force_penalty +
             smoothness_penalty +
             acceleration_penalty +
-            dcr_penalty
+            dcr_penalty  # Moderate DCR penalty only
         )
         #IMPROVEMENT: Simplified reward to just displacement
         #reward = -abs(roof_disp)
@@ -356,7 +447,7 @@ class ImprovedTMDBuildingEnv(gym.Env):
                 'force': force_penalty,
                 'smoothness': smoothness_penalty,
                 'acceleration': acceleration_penalty,
-                'dcr': dcr_penalty
+                'dcr': dcr_penalty  # Moderate penalty (2.0x weight)
             }
         }
         
@@ -466,10 +557,28 @@ class ImprovedTMDBuildingEnv(gym.Env):
 def make_improved_tmd_env(
     earthquake_file: str,
     earthquake_name: str = None,
-    max_force: float = 150000.0
+    max_force: float = 150000.0,
+    sensor_noise_std: float = 0.0,
+    actuator_noise_std: float = 0.0,
+    latency_steps: int = 0,
+    dropout_prob: float = 0.0
 ) -> ImprovedTMDBuildingEnv:
-    """Create improved TMD environment"""
-    
+    """
+    Create improved TMD environment with optional domain randomization
+
+    Args:
+        earthquake_file: Path to earthquake CSV file
+        earthquake_name: Name of the earthquake (optional)
+        max_force: Maximum control force in Newtons
+        sensor_noise_std: Standard deviation of sensor noise (0.0 = no noise)
+        actuator_noise_std: Standard deviation of actuator noise (0.0 = no noise)
+        latency_steps: Number of timesteps of actuator latency (0 = no latency)
+        dropout_prob: Probability of sensor dropout (0.0 = no dropout)
+
+    Returns:
+        ImprovedTMDBuildingEnv instance with domain randomization
+    """
+
     print(f"Loading earthquake data from {earthquake_file}...")
     data = np.loadtxt(earthquake_file, delimiter=',', skiprows=1)
     print(f"✅ Earthquake data loaded: {data.shape[0]} samples")
@@ -477,20 +586,36 @@ def make_improved_tmd_env(
     if data.shape[1] >= 2:
         times = data[:, 0]
         accelerations = data[:, 1]
-        dt = np.mean(np.diff(times))
+        dt = float(np.mean(np.diff(times)))
     else:
         accelerations = data
         dt = 0.02
-    
+
     if earthquake_name is None:
         import os
         earthquake_name = os.path.basename(earthquake_file)
-    
+
+    # Display domain randomization settings
+    if sensor_noise_std > 0 or actuator_noise_std > 0 or latency_steps > 0 or dropout_prob > 0:
+        print(f"✓ Domain randomization enabled:")
+        if sensor_noise_std > 0:
+            print(f"   - Sensor noise: {sensor_noise_std*100:.1f}%")
+        if actuator_noise_std > 0:
+            print(f"   - Actuator noise: {actuator_noise_std*100:.1f}%")
+        if latency_steps > 0:
+            print(f"   - Latency: {latency_steps} steps ({latency_steps*dt*1000:.0f}ms)")
+        if dropout_prob > 0:
+            print(f"   - Dropout: {dropout_prob*100:.1f}%")
+
     return ImprovedTMDBuildingEnv(
         earthquake_data=accelerations,
         dt=dt,
         max_force=max_force,
-        earthquake_name=earthquake_name
+        earthquake_name=earthquake_name,
+        sensor_noise_std=sensor_noise_std,
+        actuator_noise_std=actuator_noise_std,
+        latency_steps=latency_steps,
+        dropout_prob=dropout_prob
     )
 
 

@@ -53,7 +53,7 @@ def train_robust_rl_cl(earthquake_files):
     print("   - Dropout: 0-8% (simulates signal loss)")
 
     # Create directories
-    os.makedirs("simple_rl_models", exist_ok=True)
+    os.makedirs("rl_cl_alpha_1", exist_ok=True)
 
     # Training
     start_time = datetime.now()
@@ -125,7 +125,7 @@ def train_robust_rl_cl(earthquake_files):
         )
 
         # Save
-        save_path = f"simple_rl_models/stage{stage_num}_{force_limit//1000}kN_robust.zip"
+        save_path = f"rl_cl_alpha_1/stage{stage_num}_{force_limit//1000}kN_robust.zip"
         model.save(save_path)
         print(f"💾 Saved: {save_path}")
 
@@ -148,7 +148,7 @@ def train_robust_rl_cl(earthquake_files):
 
     # Final
     training_time = datetime.now() - start_time
-    final_path = "simple_rl_models/perfect_rl_robust.zip"
+    final_path = "rl_cl_alpha_1/rl_cl_observation_model.zip"
     model.save(final_path)
 
     print("="*70)

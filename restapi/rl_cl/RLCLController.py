@@ -38,12 +38,20 @@ class RLCLController:
         self.max_force = 150000.0  # 150 kN
 
         # SAFETY: Observation bounds (MUST match training environment)
+        # UPDATED: 8-value observation space [roof, floor8, floor6, TMD]
         # These bounds prevent out-of-distribution inputs on extreme earthquakes
+        # Bounds match training environment: tmd_environment.py line 82-83
+        self.obs_bounds_array = np.array([
+            [-1.2, -3.0, -1.2, -3.0, -1.2, -3.0, -1.5, -3.5],  # Low bounds
+            [1.2, 3.0, 1.2, 3.0, 1.2, 3.0, 1.5, 3.5]           # High bounds
+        ], dtype=np.float32)
+
+        # Legacy 4-value bounds (kept for backward compatibility with predict_single/batch)
         self.obs_bounds = {
-            'roof_disp': (-0.5, 0.5),      # ±50 cm
-            'roof_vel': (-2.0, 2.0),       # ±2.0 m/s
-            'tmd_disp': (-0.6, 0.6),       # ±60 cm
-            'tmd_vel': (-2.5, 2.5)         # ±2.5 m/s
+            'roof_disp': (-0.5, 0.5),      # ±50 cm (legacy)
+            'roof_vel': (-2.0, 2.0),       # ±2.0 m/s (legacy)
+            'tmd_disp': (-0.6, 0.6),       # ±60 cm (legacy)
+            'tmd_vel': (-2.5, 2.5)         # ±2.5 m/s (legacy)
         }
         self.clip_warnings = 0  # Track how many times we clip observations
 
@@ -52,8 +60,8 @@ class RLCLController:
         print("   RLCLController:     • TEST3 (M4.5): 24.67 cm (21.8% vs passive)")
         print("   RLCLController:     • TEST4 (M6.9): 20.80 cm (32% vs passive)")
         print("   RLCLController:     • Average: ~21.5 cm, Beats fuzzy by 14%")
-        print(f"   RLCLController:     • Observation bounds: roof_disp={self.obs_bounds['roof_disp']}, "
-              f"roof_vel={self.obs_bounds['roof_vel']}")
+        print(f"   RLCLController:     • Observation space: 8 values (roof, floor8, floor6, TMD)")
+        print(f"   RLCLController:     • Bounds: ±1.2m disp, ±3.0m/s vel (floors), ±1.5m TMD disp")
     
     def predict_single(self, roof_disp, roof_vel, tmd_disp, tmd_vel):
         """Single prediction with safety clipping"""
@@ -139,12 +147,9 @@ class RLCLController:
 
             while not done:
                 # SAFETY: Clip observation to training bounds before inference
-                # This prevents catastrophic failures on extreme earthquakes
-                obs_clipped = np.clip(obs,
-                                     [self.obs_bounds['roof_disp'][0], self.obs_bounds['roof_vel'][0],
-                                      self.obs_bounds['tmd_disp'][0], self.obs_bounds['tmd_vel'][0]],
-                                     [self.obs_bounds['roof_disp'][1], self.obs_bounds['roof_vel'][1],
-                                      self.obs_bounds['tmd_disp'][1], self.obs_bounds['tmd_vel'][1]])
+                # FIXED: Now handles 8-value observations correctly
+                # obs = [roof_disp, roof_vel, floor8_disp, floor8_vel, floor6_disp, floor6_vel, tmd_disp, tmd_vel]
+                obs_clipped = np.clip(obs, self.obs_bounds_array[0], self.obs_bounds_array[1])
 
                 # Get action from model
                 action, _ = self.model.predict(obs_clipped, deterministic=True)
