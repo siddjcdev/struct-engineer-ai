@@ -61,10 +61,13 @@ class ImprovedTMDBuildingEnv(gym.Env):
         self.beta = 0.25
         self.gamma = 0.5
         
-        # State space
+        # State space - UPDATED: Increased bounds to handle M7.4+ earthquakes
+        # Previous bounds: ±0.5m displacement caused out-of-distribution failures
+        # New bounds based on uncontrolled M7.4 response: ~0.6m peak displacement
+        # Added safety margin: 2x worst case = ±1.2m displacement, ±3.0m/s velocity
         self.observation_space = spaces.Box(
-            low=np.array([-0.5, -2.0, -0.6, -2.5]),
-            high=np.array([0.5, 2.0, 0.6, 2.5]),
+            low=np.array([-1.2, -3.0, -1.5, -3.5]),   # [roof_disp, roof_vel, tmd_disp, tmd_vel]
+            high=np.array([1.2, 3.0, 1.5, 3.5]),
             dtype=np.float32
         )
         
