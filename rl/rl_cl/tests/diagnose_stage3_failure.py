@@ -1,149 +1,127 @@
 """
-Diagnose why Stage 3 (M7.4) is failing catastrophically
+Emergency diagnostic: Why is Stage 3 giving 237cm (essentially uncontrolled)?
 """
 import numpy as np
 from stable_baselines3 import SAC
 from tmd_environment import make_improved_tmd_env
 
-print("\n" + "="*70)
-print("DIAGNOSING STAGE 3 FAILURE")
+print("="*70)
+print("EMERGENCY DIAGNOSTIC: STAGE 3 FAILURE")
 print("="*70)
 
-# Load Stage 3 model
-model_path = "rl_cl_robust_models_5_datafix/stage3_150kN_final_robust.zip"
+test_file = "../../matlab/datasets/PEER_high_M7.4_PGA0.75g.csv"
+model_path = "rl_cl_models_alpha_3/stage3_150kN_final_robust.zip"
+
+# Load model
+print(f"\n1. Loading model: {model_path}")
 model = SAC.load(model_path)
 
-# Test on M7.4 earthquake
-test_file = "../../matlab/datasets/PEER_high_M7.4_PGA0.75g.csv"
-env = make_improved_tmd_env(test_file, max_force=150000.0)
+# Create environment with SAME bounds as training
+obs_bounds = {
+    'disp': 5.0,
+    'vel': 20.0,
+    'tmd_disp': 15.0,
+    'tmd_vel': 60.0
+}
 
-print("\n[TEST] Stage 3 Model on M7.4 Earthquake")
-print("-" * 70)
+print(f"\n2. Creating test environment with obs_bounds: {obs_bounds}")
+env = make_improved_tmd_env(test_file, max_force=150000.0, obs_bounds=obs_bounds)
 
+# Run simulation and track everything
 obs, _ = env.reset()
 done = False
+forces = []
+observations = []
+actions = []
+displacements = []
+
+print(f"\n3. Running simulation...")
+print(f"   Initial observation: {obs}")
+print(f"   Observation space: {env.observation_space}")
+
 step = 0
-
-# Track metrics
-peak_roof = 0
-peak_tmd_abs = 0
-peak_tmd_rel = 0
-max_force = 0
-clipped_steps = 0
-total_steps = 0
-
-obs_min = obs.copy()
-obs_max = obs.copy()
-
-while not done:
+while not done and step < 3000:
+    # Get action
     action, _ = model.predict(obs, deterministic=True)
+
+    # Store
+    forces.append(float(action[0]) * 150000)
+    observations.append(obs.copy())
+    actions.append(float(action[0]))
+
+    # Step
     obs, reward, done, truncated, info = env.step(action)
-
-    # Track peaks
-    peak_roof = max(peak_roof, abs(info['roof_displacement']))
-    peak_tmd_abs = max(peak_tmd_abs, abs(env.displacement[12]))  # TMD absolute
-    peak_tmd_rel = max(peak_tmd_rel, abs(env.displacement[12] - env.displacement[11]))  # TMD relative to roof
-    max_force = max(max_force, abs(action[0] * 150000))
-
-    # Check for clipping
-    if np.any(obs <= env.observation_space.low) or np.any(obs >= env.observation_space.high):
-        clipped_steps += 1
-
-    # Track observation ranges
-    obs_min = np.minimum(obs_min, obs)
-    obs_max = np.maximum(obs_max, obs)
-
-    total_steps += 1
+    displacements.append(info['roof_displacement'])
     done = done or truncated
     step += 1
 
-print(f"\n📊 Performance Metrics:")
-print(f"   Peak roof displacement: {peak_roof*100:.2f} cm")
-print(f"   Peak TMD absolute displacement: {peak_tmd_abs*100:.2f} cm")
-print(f"   Peak TMD relative displacement: {peak_tmd_rel*100:.2f} cm")
-print(f"   Max control force: {max_force/1000:.2f} kN")
-print(f"   Clipped steps: {clipped_steps}/{total_steps} ({clipped_steps/total_steps*100:.1f}%)")
+forces = np.array(forces)
+actions = np.array(actions)
+displacements = np.array(displacements)
+observations = np.array(observations)
 
-print(f"\n📊 Observation Ranges:")
-obs_labels = ['roof_disp', 'roof_vel', 'floor8_disp', 'floor8_vel',
-              'floor6_disp', 'floor6_vel', 'tmd_disp', 'tmd_vel']
-bounds_low = env.observation_space.low
-bounds_high = env.observation_space.high
+print(f"\n4. RESULTS:")
+print(f"   Peak displacement: {max(abs(displacements))*100:.2f} cm")
+print(f"   Uncontrolled expected: 231.56 cm")
+print(f"   Steps simulated: {step}")
 
-for i, label in enumerate(obs_labels):
-    exceeded_low = "❌ EXCEEDED" if obs_min[i] < bounds_low[i] else "✅"
-    exceeded_high = "❌ EXCEEDED" if obs_max[i] > bounds_high[i] else "✅"
-    print(f"   {label:12s}: [{obs_min[i]:+8.3f}, {obs_max[i]:+8.3f}]  "
-          f"(bounds: [{bounds_low[i]:+.1f}, {bounds_high[i]:+.1f}])  "
-          f"{exceeded_low if obs_min[i] < bounds_low[i] else exceeded_high}")
+print(f"\n5. CONTROL ANALYSIS:")
+print(f"   Action statistics:")
+print(f"      Mean: {np.mean(actions):.6f}")
+print(f"      Std:  {np.std(actions):.6f}")
+print(f"      Min:  {np.min(actions):.6f}")
+print(f"      Max:  {np.max(actions):.6f}")
+print(f"   Force statistics:")
+print(f"      Mean abs: {np.mean(np.abs(forces))/1000:.2f} kN")
+print(f"      Peak:     {np.max(np.abs(forces))/1000:.2f} kN")
+print(f"      Max allowed: 150 kN")
 
-# Test uncontrolled for comparison
-print(f"\n[BASELINE] Uncontrolled M7.4 (no TMD, no control)")
-print("-" * 70)
-
-env_uncontrolled = make_improved_tmd_env(test_file, max_force=1.0)
-# Disable TMD
-env_uncontrolled.tmd_k = 0.0
-env_uncontrolled.tmd_c = 0.0
-
-obs, _ = env_uncontrolled.reset()
-done = False
-peak_uncontrolled = 0
-
-while not done:
-    action = np.array([0.0])
-    obs, reward, done, truncated, info = env_uncontrolled.step(action)
-    peak_uncontrolled = max(peak_uncontrolled, abs(info['roof_displacement']))
-    done = done or truncated
-
-print(f"   Peak displacement (no TMD, no control): {peak_uncontrolled*100:.2f} cm")
-
-# Test passive TMD
-print(f"\n[BASELINE] Passive TMD (no active control)")
-print("-" * 70)
-
-env_passive = make_improved_tmd_env(test_file, max_force=150000.0)
-obs, _ = env_passive.reset()
-done = False
-peak_passive = 0
-peak_tmd_passive = 0
-
-while not done:
-    action = np.array([0.0])  # No control force
-    obs, reward, done, truncated, info = env_passive.step(action)
-    peak_passive = max(peak_passive, abs(info['roof_displacement']))
-    peak_tmd_passive = max(peak_tmd_passive, abs(env_passive.displacement[12]))
-    done = done or truncated
-
-print(f"   Peak roof displacement (passive TMD): {peak_passive*100:.2f} cm")
-print(f"   Peak TMD displacement (passive): {peak_tmd_passive*100:.2f} cm")
-
-# Summary
-print(f"\n" + "="*70)
-print("DIAGNOSIS SUMMARY")
-print("="*70)
-
-print(f"\nPerformance Comparison (M7.4 earthquake):")
-print(f"   Uncontrolled (no TMD):       {peak_uncontrolled*100:8.2f} cm")
-print(f"   Passive TMD (no control):    {peak_passive*100:8.2f} cm")
-print(f"   Active RL control (Stage 3): {peak_roof*100:8.2f} cm")
-
-if peak_roof > peak_uncontrolled:
-    print(f"\n❌ CRITICAL: RL control is WORSE than uncontrolled!")
-    print(f"   Amplification: {peak_roof/peak_uncontrolled:.2f}x")
-elif peak_roof > peak_passive:
-    print(f"\n⚠️  WARNING: RL control is worse than passive TMD")
-    print(f"   Degradation: {peak_roof/peak_passive:.2f}x")
+if np.std(actions) < 0.001:
+    print(f"\n   ❌ PROBLEM: Actions are nearly constant!")
+    print(f"      Model is not responding to observations")
 else:
-    print(f"\n✅ RL control is working")
-    print(f"   Reduction: {(1 - peak_roof/peak_uncontrolled)*100:.1f}%")
+    print(f"\n   ✓ Model is varying actions")
 
-if clipped_steps/total_steps > 0.05:
-    print(f"\n❌ CRITICAL: {clipped_steps/total_steps*100:.1f}% observation clipping!")
-    print(f"   This indicates TMD runaway or extreme building response")
+print(f"\n6. OBSERVATION ANALYSIS:")
+print(f"   Roof displacement range: [{np.min(observations[:,0]):.3f}, {np.max(observations[:,0]):.3f}]")
+print(f"   Roof velocity range:     [{np.min(observations[:,1]):.3f}, {np.max(observations[:,1]):.3f}]")
+print(f"   TMD displacement range:  [{np.min(observations[:,6]):.3f}, {np.max(observations[:,6]):.3f}]")
+print(f"   TMD velocity range:      [{np.min(observations[:,7]):.3f}, {np.max(observations[:,7]):.3f}]")
 
-if peak_tmd_abs > 3.0:  # 3 meters
-    print(f"\n❌ CRITICAL: TMD displacement is {peak_tmd_abs*100:.0f} cm ({peak_tmd_abs:.1f} m)")
-    print(f"   This is physically unrealistic - TMD is running away!")
+# Check if observations are clipped
+obs_at_bounds = 0
+for i in range(len(observations)):
+    if np.any(np.abs(observations[i]) > 4.9):  # Close to ±5.0 bound
+        obs_at_bounds += 1
+
+if obs_at_bounds > 0:
+    print(f"\n   ⚠️  {obs_at_bounds}/{len(observations)} observations near bounds (possible clipping)")
+else:
+    print(f"\n   ✓ No observations near bounds")
+
+print(f"\n7. SAMPLE TIMESTEPS (first 10 peak displacement moments):")
+peak_indices = np.argsort(np.abs(displacements))[-10:][::-1]
+for idx in peak_indices:
+    if idx < len(observations):
+        print(f"   Step {idx}: disp={displacements[idx]*100:6.2f}cm, "
+              f"action={actions[idx]:+.3f}, force={forces[idx]/1000:+6.1f}kN, "
+              f"obs[0]={observations[idx,0]:+.3f}")
 
 print("\n" + "="*70)
+print("DIAGNOSIS:")
+if np.std(actions) < 0.001:
+    print("❌ Model outputs constant actions → Not learning!")
+    print("   Possible causes:")
+    print("   - Observation space mismatch between training and testing")
+    print("   - Model didn't train properly")
+    print("   - Wrong model file loaded")
+elif np.mean(np.abs(forces)) < 1000:
+    print("❌ Forces are too weak (< 1kN average)")
+    print("   Model learned to do nothing")
+elif obs_at_bounds > len(observations) * 0.1:
+    print("❌ Observations are being clipped (>10% at bounds)")
+    print("   Model is blind to true state")
+else:
+    print("⚠️  Model is responding but not effective")
+    print("   May need more training or reward tuning")
+print("="*70 + "\n")
