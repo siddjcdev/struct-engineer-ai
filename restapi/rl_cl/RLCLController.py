@@ -130,7 +130,9 @@ class RLCLController:
             # if rl_cl_path not in sys.path:
             #     sys.path.insert(0, rl_cl_path)
 
-            from .rl_cl_tmd_environment import ImprovedTMDBuildingEnv
+            #from .rl_cl_tmd_environment import ImprovedTMDBuildingEnv
+            from .tmd_environment_shaped_reward import ImprovedTMDBuildingEnv
+
 
             # Create environment with SAME obs_bounds as training
             # CRITICAL: Must match train_final_robust_rl_cl.py obs_bounds

@@ -1,14 +1,14 @@
 """
-Train with Shaped Rewards
-=========================
+Train with Shaped Rewards + Curriculum Learning
+================================================
 
-Uses the shaped reward environment to provide stronger learning signals:
-- 10x stronger displacement penalty
-- 10x stronger velocity penalty
-- Force direction bonus (+5.0 for correct, -2.0 for wrong)
-- No smoothness/acceleration penalties
-
-This should allow the agent to discover that opposing velocity reduces displacement.
+v4: Back to basics - simple reward with curriculum learning
+- Displacement penalty: -1.0 (original)
+- Velocity penalty: -0.3 (original)
+- NO force direction bonus (was teaching wrong behavior)
+- NO DCR penalty (conflicts with displacement minimization)
+- 4-stage curriculum learning
+- 700K total timesteps
 
 Usage: python train_shaped_rewards.py
 """
@@ -22,154 +22,179 @@ from stable_baselines3.common.monitor import Monitor
 from tmd_environment_shaped_reward import make_improved_tmd_env
 
 
-def train_shaped_rewards():
-    """Train with shaped rewards on M4.5 earthquake"""
+def train_shaped_rewards_curriculum():
+    """Train with simple reward + curriculum learning"""
 
     print("="*70)
-    print("  Training with Shaped Rewards")
+    print("  Training with Simple Reward + Curriculum Learning (v4)")
     print("="*70)
 
-    # Start with M4.5 only
-    earthquake_file = "../../matlab/datasets/PEER_small_M4.5_PGA0.25g.csv"
-    force_limit = 50000  # 50kN
+    # PEER earthquakes for curriculum
+    earthquake_files = [
+        "../../matlab/datasets/PEER_small_M4.5_PGA0.25g.csv",
+        "../../matlab/datasets/PEER_moderate_M5.7_PGA0.35g.csv",
+        "../../matlab/datasets/PEER_high_M7.4_PGA0.75g.csv",
+        "../../matlab/datasets/PEER_insane_M8.4_PGA0.9g.csv"
+    ]
 
-    print(f"\n📊 Training Configuration:")
-    print(f"   Earthquake: {os.path.basename(earthquake_file)}")
-    print(f"   Force limit: {force_limit/1000:.0f} kN")
-    print(f"   Timesteps: 200,000")
-    print(f"\n🎯 Shaped Reward Features (v3 - Pure Direction Learning):")
-    print(f"   • Displacement penalty: DISABLED (0.0)")
-    print(f"   • Velocity penalty: DISABLED (0.0)")
-    print(f"   • Force direction bonus: +5.0 for correct, -2.0 for wrong")
-    print(f"   • ONLY reward signal: Force direction (same signs = correct)")
-    print(f"   • Learn the ACTION (force direction), not the OUTCOME (displacement)")
+    print("\n📊 Training Configuration:")
+    print("   Using PEER earthquakes with curriculum learning")
+    for i, eq in enumerate(earthquake_files, 1):
+        print(f"   {i}. {os.path.basename(eq)}")
+
+    print("\n🎯 Reward Features (v4 - Back to Basics):")
+    print("   • Displacement penalty: -1.0 (original, gentle)")
+    print("   • Velocity penalty: -0.3 (original, gentle)")
+    print("   • Force direction bonus: DISABLED (was teaching wrong behavior)")
+    print("   • DCR penalty: DISABLED (conflicts with displacement)")
+    print("   • Let agent discover optimal control through exploration")
+
+    # Curriculum stages
+    print("\n🎯 Curriculum Plan:")
+    stages = [
+        {'force_limit': 50000,  'timesteps': 150000, 'name': 'M4.5 @ 50kN',  'eq_idx': 0},
+        {'force_limit': 100000, 'timesteps': 150000, 'name': 'M5.7 @ 100kN', 'eq_idx': 1},
+        {'force_limit': 150000, 'timesteps': 200000, 'name': 'M7.4 @ 150kN', 'eq_idx': 2},
+        {'force_limit': 150000, 'timesteps': 200000, 'name': 'M8.4 @ 150kN', 'eq_idx': 3},
+    ]
+
+    for i, stage in enumerate(stages, 1):
+        print(f"   Stage {i}: {stage['name']} - {stage['timesteps']:,} steps")
+
+    print(f"\n   Total timesteps: {sum(s['timesteps'] for s in stages):,}")
 
     # Create directory
-    os.makedirs("models/rl_shaped_rewards", exist_ok=True)
+    os.makedirs("models/rl_shaped_rewards_curriculum", exist_ok=True)
 
-    # Create environment
-    def make_env():
-        env = make_improved_tmd_env(earthquake_file, max_force=force_limit)
-        env = Monitor(env)
-        return env
-
-    env = DummyVecEnv([make_env])
-
-    # Create model
-    print(f"\n🤖 Creating SAC model...")
-    model = SAC(
-        "MlpPolicy",
-        env,
-        learning_rate=3e-4,
-        buffer_size=100_000,
-        batch_size=256,
-        gamma=0.99,
-        tau=0.005,
-        ent_coef='auto',
-        policy_kwargs=dict(net_arch=[256, 256]),
-        verbose=1,
-        device='cpu'
-    )
-
-    # Train
-    print(f"\n🚀 Training for 200,000 timesteps...")
+    # Training
     start_time = datetime.now()
+    model = None
 
-    model.learn(
-        total_timesteps=200_000,
-        progress_bar=True
-    )
+    for stage_idx, stage in enumerate(stages):
+        stage_num = stage_idx + 1
+        force_limit = stage['force_limit']
+        timesteps = stage['timesteps']
+        eq_idx = stage['eq_idx']
+        eq_file = earthquake_files[eq_idx]
 
+        print(f"\n{'='*70}")
+        print(f"  STAGE {stage_num}/{len(stages)}: {stage['name']}")
+        print(f"{'='*70}\n")
+        print(f"   Earthquake: {os.path.basename(eq_file)}")
+        print(f"   Force limit: {force_limit/1000:.0f} kN")
+        print(f"   Timesteps: {timesteps:,}")
+
+        # Create environment
+        def make_env():
+            env = make_improved_tmd_env(eq_file, max_force=force_limit)
+            env = Monitor(env)
+            return env
+
+        env = DummyVecEnv([make_env])
+
+        # Create or update model
+        if model is None:
+            print(f"\n🤖 Creating SAC model...")
+            model = SAC(
+                "MlpPolicy",
+                env,
+                learning_rate=3e-4,
+                buffer_size=100_000,
+                batch_size=256,
+                gamma=0.99,
+                tau=0.005,
+                ent_coef='auto',
+                policy_kwargs=dict(net_arch=[256, 256]),
+                verbose=1,
+                device='cpu'
+            )
+        else:
+            print(f"\n🔄 Continuing from Stage {stage_num-1}...")
+            model.set_env(env)
+
+        # Train
+        print(f"\n🚀 Training...")
+        model.learn(
+            total_timesteps=timesteps,
+            reset_num_timesteps=False,
+            progress_bar=True
+        )
+
+        # Save
+        save_path = f"models/rl_shaped_rewards_curriculum/stage{stage_num}_{force_limit//1000}kN.zip"
+        model.save(save_path)
+        print(f"\n💾 Saved: {save_path}")
+
+        # Quick test on same earthquake
+        print(f"\n📊 Testing on training earthquake...")
+        test_env = make_improved_tmd_env(eq_file, max_force=force_limit)
+        obs, _ = test_env.reset()
+        done = False
+        peak = 0
+
+        while not done:
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, done, truncated, info = test_env.step(action)
+            peak = max(peak, abs(info['roof_displacement']))
+            done = done or truncated
+
+        peak_cm = peak * 100
+        print(f"   Peak displacement: {peak_cm:.2f} cm")
+        print(f"\n✅ Stage {stage_num} complete!\n")
+
+    # Final model save
     training_time = datetime.now() - start_time
+    final_path = "models/rl_shaped_rewards_curriculum/final_v4_curriculum.zip"
+    model.save(final_path)
 
-    # Save
-    save_path = "models/rl_shaped_rewards/m4.5_shaped.zip"
-    model.save(save_path)
-    print(f"\n💾 Saved: {save_path}")
+    print("="*70)
+    print("  🎉 CURRICULUM TRAINING COMPLETE!")
+    print("="*70)
+    print(f"\n   Total training time: {training_time}")
+    print(f"   Final model: {final_path}")
+    print(f"\n   This model:")
+    print(f"   • Used simple reward (-1.0 * disp, -0.3 * vel)")
+    print(f"   • No force direction shaping (let agent discover)")
+    print(f"   • No DCR penalty (let it emerge naturally)")
+    print(f"   • 4-stage curriculum learning")
+    print(f"   • {sum(s['timesteps'] for s in stages):,} total timesteps")
 
-    # Test
-    print(f"\n📊 Testing on M4.5...")
-    test_env = make_improved_tmd_env(earthquake_file, max_force=force_limit)
-    obs, _ = test_env.reset()
-    done = False
-    peak = 0
-    total_reward = 0
-    force_history = []
-    vel_history = []
-
-    while not done:
-        action, _ = model.predict(obs, deterministic=True)
-        obs, reward, done, truncated, info = test_env.step(action)
-        peak = max(peak, abs(info['roof_displacement']))
-        total_reward += reward
-        force_history.append(info['control_force'])
-        vel_history.append(obs[1])  # roof velocity
-        done = done or truncated
-
-    peak_cm = peak * 100
-
-    # Get DCR from environment
-    episode_metrics = test_env.get_episode_metrics()
-    dcr = episode_metrics.get('dcr', 0.0)
-
-    # Analyze force behavior
-    force_history = np.array(force_history)
-    vel_history = np.array(vel_history)
-
-    # Check if agent learned correct force direction
-    # CRITICAL: Due to F_eq[roof] -= control_force, SAME signs = correct!
-    correct_direction = 0
-    total_with_motion = 0
-    for i in range(len(vel_history)):
-        if abs(vel_history[i]) > 0.01:  # Significant motion
-            total_with_motion += 1
-            # Correct: vel>0 needs force>0, vel<0 needs force<0 (SAME signs!)
-            if (vel_history[i] > 0 and force_history[i] > 0) or \
-               (vel_history[i] < 0 and force_history[i] < 0):
-                correct_direction += 1
-
-    if total_with_motion > 0:
-        correct_pct = 100 * correct_direction / total_with_motion
-    else:
-        correct_pct = 0
-
+    # Final comprehensive test
     print(f"\n{'='*70}")
-    print(f"  RESULTS")
-    print(f"{'='*70}")
-    print(f"\n   Training time: {training_time}")
-    print(f"   Peak displacement: {peak_cm:.2f} cm")
-    print(f"   DCR (Drift Concentration Ratio): {dcr:.2f}")
-    print(f"   Total reward: {total_reward:.2f}")
-    print(f"   Force direction correctness: {correct_pct:.1f}%")
-    print(f"   Mean force magnitude: {np.mean(np.abs(force_history)):.0f} N")
+    print(f"  FINAL TESTING ON ALL EARTHQUAKES")
+    print(f"{'='*70}\n")
 
-    # Compare to uncontrolled
-    uncontrolled_peak = 21.02  # From emergency_physics_check.py
-    improvement = 100 * (uncontrolled_peak - peak_cm) / uncontrolled_peak
+    results = []
+    for eq_file in earthquake_files:
+        eq_name = os.path.basename(eq_file)
+        test_env = make_improved_tmd_env(eq_file, max_force=150000)
+        obs, _ = test_env.reset()
+        done = False
+        peak = 0
+        total_reward = 0
 
-    print(f"\n   Uncontrolled peak: {uncontrolled_peak:.2f} cm")
-    print(f"   Improvement: {improvement:.1f}%")
+        while not done:
+            action, _ = model.predict(obs, deterministic=True)
+            obs, reward, done, truncated, info = test_env.step(action)
+            peak = max(peak, abs(info['roof_displacement']))
+            total_reward += reward
+            done = done or truncated
 
-    # Analyze results
-    print(f"\n{'='*70}")
-    print(f"  ANALYSIS")
-    print(f"{'='*70}")
+        peak_cm = peak * 100
+        episode_metrics = test_env.get_episode_metrics()
+        dcr = episode_metrics.get('dcr', 0.0)
 
-    if peak_cm < 19.0:
-        print(f"\n   ✅ SUCCESS! Agent learned to reduce displacement!")
-    elif improvement > 5:
-        print(f"\n   ⚠️  Partial success - some improvement but not optimal")
-    else:
-        print(f"\n   ❌ Agent did not learn effectively")
+        results.append({
+            'earthquake': eq_name,
+            'peak_cm': peak_cm,
+            'dcr': dcr,
+            'total_reward': total_reward
+        })
 
-    if dcr <= 1.5:
-        print(f"   ✅ DCR is good ({dcr:.2f} ≤ 1.5) - uniform drift distribution")
-        print(f"   → Hypothesis CONFIRMED: Good control naturally produces good DCR")
-    elif dcr <= 2.0:
-        print(f"   ⚠️  DCR is acceptable ({dcr:.2f} ≤ 2.0)")
-    else:
-        print(f"   ❌ DCR is high ({dcr:.2f} > 2.0) - drift concentration detected")
-        print(f"   → May need to reconsider DCR penalty removal")
+        print(f"   {eq_name}:")
+        print(f"      Peak displacement: {peak_cm:.2f} cm")
+        print(f"      DCR: {dcr:.2f}")
+        print(f"      Total reward: {total_reward:.2f}\n")
 
     print("="*70 + "\n")
 
@@ -177,9 +202,9 @@ def train_shaped_rewards():
 
 
 if __name__ == "__main__":
-    print("\n🚀 Starting Shaped Reward Training...\n")
-    model = train_shaped_rewards()
+    print("\n🚀 Starting Curriculum Training (v4 - Simple Reward)...\n")
+    model = train_shaped_rewards_curriculum()
     if model is not None:
-        print("\n✅ Training complete!")
+        print("\n✅ Curriculum training complete!")
     else:
         print("\n❌ Training failed.")
