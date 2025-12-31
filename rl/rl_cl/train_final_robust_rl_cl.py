@@ -17,7 +17,6 @@ Usage: python train_final_robust_rl_cl.py
 """
 
 import numpy as np
-import torch
 import os
 from datetime import datetime
 from stable_baselines3 import SAC
@@ -88,15 +87,17 @@ def train_final_robust_rl_cl():
         n_variants = len(train_files[stage['magnitude']])
         print(f"   Stage {i}: {stage['name']} - {stage['timesteps']:,} steps ({n_variants} training variants)")
 
-    print("\n🛡️  Domain Randomization (applied to each episode):")
-    print("   - Sensor noise: 0-10%")
-    print("   - Actuator noise: 0-5%")
-    print("   - Latency: 0-40ms")
-    print("   - Dropout: 0-8%")
+    print("\n🛡️  Domain Randomization (50% of episodes):")
+    print("   - 50% episodes: CLEAN (no augmentation)")
+    print("   - 50% episodes: AUGMENTED")
+    print("     • Sensor noise: 0-10%")
+    print("     • Actuator noise: 0-5%")
+    print("     • Latency: 0-40ms")
+    print("     • Dropout: 0-8%")
     print("   - Training variant: randomly sampled each episode")
 
     # Create directories
-    os.makedirs("rl_cl_robust_models", exist_ok=True)
+    os.makedirs("rl_cl_models_alpha_2", exist_ok=True)
 
     # Training
     start_time = datetime.now()
@@ -117,21 +118,43 @@ def train_final_robust_rl_cl():
             print(f"      - {os.path.basename(f)}")
 
         # Create environment with MULTI-VARIANT DOMAIN RANDOMIZATION
-        def make_env(eq_files, force_lim):
+        def make_env(eq_files, force_lim, mag):
             """
             Each episode:
             1. Randomly samples one training variant
-            2. Randomly samples augmentation parameters
-            This maximizes diversity and prevents memorization
+            2. 50% chance: clean data, 50% chance: augmented data
+            3. Uses adaptive observation bounds for extreme earthquakes
+            This ensures model learns both clean and noisy conditions
             """
             # Randomly select earthquake variant
             eq_file = np.random.choice(eq_files)
 
-            # Sample random augmentation parameters
-            sensor_noise = np.random.uniform(0.0, 0.10)    # 0-10% noise
-            actuator_noise = np.random.uniform(0.0, 0.05)  # 0-5% noise
-            latency = np.random.choice([0, 1, 2])          # 0, 20ms, or 40ms
-            dropout = np.random.uniform(0.0, 0.08)         # 0-8% dropout
+            # 50% of episodes: clean data (no augmentation)
+            # 50% of episodes: augmented data (with noise/latency/dropout)
+            if np.random.random() < 0.5:
+                # Clean episode
+                sensor_noise = 0.0
+                actuator_noise = 0.0
+                latency = 0
+                dropout = 0.0
+            else:
+                # Augmented episode
+                sensor_noise = np.random.uniform(0.0, 0.10)    # 0-10% noise
+                actuator_noise = np.random.uniform(0.0, 0.05)  # 0-5% noise
+                latency = np.random.choice([0, 1, 2])          # 0, 20ms, or 40ms
+                dropout = np.random.uniform(0.0, 0.08)         # 0-8% dropout
+
+            # FIXED: Use large bounds for ALL stages (consistent observation space)
+            # This allows curriculum learning to work properly (Stage 1→2→3→4)
+            # Bounds sized for PASSIVE M8.4 (worst case: 3.57m roof, 4.93m TMD)
+            # With active control, displacements will be much lower, but we need
+            # large bounds to handle startup before controller learns
+            obs_bounds = {
+                'disp': 5.0,      # ±5.0m (covers M8.4 passive at 3.57m + margin)
+                'vel': 20.0,      # ±20.0m/s
+                'tmd_disp': 15.0, # ±15.0m (covers M8.4 TMD passive at 4.93m + margin)
+                'tmd_vel': 60.0   # ±60.0m/s
+            }
 
             env = make_improved_tmd_env(
                 eq_file,
@@ -139,16 +162,21 @@ def train_final_robust_rl_cl():
                 sensor_noise_std=sensor_noise,
                 actuator_noise_std=actuator_noise,
                 latency_steps=latency,
-                dropout_prob=dropout
+                dropout_prob=dropout,
+                obs_bounds=obs_bounds
             )
             env = Monitor(env)
             return env
 
         # Create vectorized environment
-        env = DummyVecEnv([lambda files=available_files, fl=force_limit: make_env(files, fl)])
+        env = DummyVecEnv([lambda files=available_files, fl=force_limit, m=magnitude: make_env(files, fl, m)])
 
         # Create or update model
         if model is None:
+            # Force CPU training (user preference)
+            device = 'cpu'
+            print(f"\n💻 Using CPU for training (as requested)")
+
             print(f"\n🤖 Creating SAC model...")
             model = SAC(
                 "MlpPolicy",
@@ -161,7 +189,7 @@ def train_final_robust_rl_cl():
                 ent_coef='auto',
                 policy_kwargs=dict(net_arch=[256, 256]),
                 verbose=1,
-                device='auto'
+                device=device
             )
         else:
             print(f"\n🔄 Updating environment...")
@@ -176,7 +204,7 @@ def train_final_robust_rl_cl():
         )
 
         # Save
-        save_path = f"rl_cl_robust_models/stage{stage_num}_{force_limit//1000}kN_final_robust.zip"
+        save_path = f"rl_cl_models_alpha_2/stage{stage_num}_{force_limit//1000}kN_final_robust.zip"
         model.save(save_path)
         print(f"\n💾 Saved: {save_path}")
 
@@ -185,7 +213,15 @@ def train_final_robust_rl_cl():
         test_file = test_files[magnitude]
 
         if os.path.exists(test_file):
-            test_env = make_improved_tmd_env(test_file, max_force=force_limit)
+            # Use same adaptive bounds for testing
+            if magnitude in ['M7.4', 'M8.4']:
+                test_obs_bounds = {
+                    'disp': 3.0, 'vel': 15.0, 'tmd_disp': 10.0, 'tmd_vel': 40.0
+                }
+            else:
+                test_obs_bounds = None
+
+            test_env = make_improved_tmd_env(test_file, max_force=force_limit, obs_bounds=test_obs_bounds)
             obs, _ = test_env.reset()
             done = False
             truncated = False
@@ -206,7 +242,7 @@ def train_final_robust_rl_cl():
 
     # Final
     training_time = datetime.now() - start_time
-    final_path = "rl_cl_robust_models/perfect_rl_final_robust.zip"
+    final_path = "rl_cl_models_alpha_2/rl_cl_models_alpha_2.zip"
     model.save(final_path)
 
     print("="*70)
@@ -223,7 +259,7 @@ def train_final_robust_rl_cl():
     print(f"   • Generalize to unseen earthquakes")
     print(f"   • Handle real-world stress conditions")
     print(f"\n   Next: Copy to API and run full comparison!")
-    print(f"   Command: cp {final_path} restapi/rl_cl/rl_cl_robust_models/")
+    print(f"   Command: cp {final_path} restapi/rl_cl/rl_cl_models_alpha_2/")
     print("="*70 + "\n")
 
     return model

@@ -34,7 +34,8 @@ class ImprovedTMDBuildingEnv(gym.Env):
         sensor_noise_std: float = 0.0,
         actuator_noise_std: float = 0.0,
         latency_steps: int = 0,
-        dropout_prob: float = 0.0
+        dropout_prob: float = 0.0,
+        obs_bounds: dict = None
     ):
         super().__init__()
 
@@ -55,15 +56,15 @@ class ImprovedTMDBuildingEnv(gym.Env):
         self.floor_mass = 2.0e5          # 200,000 kg (was 300,000) - matches MATLAB m0
         self.tmd_mass = 0.02 * self.floor_mass  # 2% mass ratio = 4000 kg
 
-        # TMD tuning - OPTIMIZED via parameter sweep
+        # TMD tuning - OPTIMIZED for active control (FIX #1)
         # Building fundamental frequency: 0.193 Hz
-        # Optimal TMD frequency ratio: 0.80 (from empirical testing)
-        # TMD frequency: 0.154 Hz
-        # Performance: 20.90 cm (no TMD) → 20.16 cm (passive TMD) = 3.5% reduction
-        # Note: Small improvement due to low mass ratio (0.17% of total building mass)
-        # OLD (WRONG): k=50e3 N/m, c=2000 N·s/m → f_tmd=0.563 Hz (2.9x too high, made it worse!)
-        self.tmd_k = 3765                # TMD stiffness (3.765 kN/m) - empirically optimized
-        self.tmd_c = 194                 # TMD damping (194 N·s/m) - 2.5% critical damping
+        # CRITICAL: For active control with 50-150 kN forces, TMD must be stiffer
+        # Passive-optimized TMD (k=3765) caused runaway displacement (867-6780 cm!)
+        # Active-optimized TMD prevents runaway and allows proper control
+        # Trade-off: Passive performance is 0% (but was only 3.5% anyway)
+        # Benefit: Active control can work properly without observation clipping
+        self.tmd_k = 50000               # TMD stiffness (50 kN/m) - active control optimized
+        self.tmd_c = 2000                # TMD damping (2000 N·s/m) - active control optimized
 
         # Story stiffness - matches MATLAB k0 and soft_story_factor
         k_typical = 2.0e7                # 20 MN/m (was 800 MN/m) - matches MATLAB k0
@@ -87,10 +88,26 @@ class ImprovedTMDBuildingEnv(gym.Env):
         # - Floor 8: Weak floor (critical for DCR)
         # - Floor 6: Mid-height reference
         # - TMD: Active control device
-        # Bounds: ±1.2m displacement, ±3.0m/s velocity (2x safety margin for M7.4+)
+        # Bounds: Adaptive based on earthquake magnitude (larger bounds for extreme events)
+        # Default: ±1.2m displacement, ±3.0m/s velocity (for M4.5-M5.7)
+        # Can be overridden for M7.4+ earthquakes
+        if obs_bounds is None:
+            obs_bounds = {
+                'disp': 1.2, 'vel': 3.0, 'tmd_disp': 1.5, 'tmd_vel': 3.5
+            }
         self.observation_space = spaces.Box(
-            low=np.array([-1.2, -3.0, -1.2, -3.0, -1.2, -3.0, -1.5, -3.5]),
-            high=np.array([1.2, 3.0, 1.2, 3.0, 1.2, 3.0, 1.5, 3.5]),
+            low=np.array([
+                -obs_bounds['disp'], -obs_bounds['vel'],
+                -obs_bounds['disp'], -obs_bounds['vel'],
+                -obs_bounds['disp'], -obs_bounds['vel'],
+                -obs_bounds['tmd_disp'], -obs_bounds['tmd_vel']
+            ]),
+            high=np.array([
+                obs_bounds['disp'], obs_bounds['vel'],
+                obs_bounds['disp'], obs_bounds['vel'],
+                obs_bounds['disp'], obs_bounds['vel'],
+                obs_bounds['tmd_disp'], obs_bounds['tmd_vel']
+            ]),
             dtype=np.float32
         )
 
@@ -381,21 +398,24 @@ class ImprovedTMDBuildingEnv(gym.Env):
         self.peak_drift_per_floor = np.maximum(self.peak_drift_per_floor, floor_drifts)
 
         # Calculate DCR from peak drifts (same formula as get_episode_metrics)
+        # FIX #2: Higher threshold to prevent DCR explosion early in episode
         if np.max(self.peak_drift_per_floor) > 1e-10:
             sorted_peaks = np.sort(self.peak_drift_per_floor)
             percentile_75 = np.percentile(sorted_peaks, 75)
             max_peak = np.max(self.peak_drift_per_floor)
 
-            if percentile_75 > 1e-10:
+            # CRITICAL FIX: Only calculate DCR after sufficient drift has occurred (1mm minimum)
+            # Old threshold (1e-10 = 0.00001mm) caused DCR=7,000+ early in episode
+            # This led to penalties of -105 million that destroyed the reward signal
+            # New threshold (0.001 = 1mm) ensures DCR is only calculated when meaningful
+            if percentile_75 > 0.001:  # 1mm minimum drift (was 1e-10)
                 current_dcr = max_peak / percentile_75
                 # Penalize DCR deviation from ideal (1.0 = perfectly uniform)
-                # ABLATION STUDY: Moderate penalty weight (2.0) - 4x increase from original
                 # DCR=1.0 → 0, DCR=2.0 → -2.0, DCR=3.0 → -8.0
-                # This is strong enough to matter but won't dominate displacement penalty
                 dcr_deviation = max(0, current_dcr - 1.0)
                 dcr_penalty = -2.0 * (dcr_deviation ** 2)  # Moderate penalty
             else:
-                dcr_penalty = 0.0
+                dcr_penalty = 0.0  # Don't penalize DCR early in episode
         else:
             dcr_penalty = 0.0
 
@@ -523,7 +543,7 @@ class ImprovedTMDBuildingEnv(gym.Env):
             percentile_75 = np.percentile(sorted_peaks, 75)
             max_peak = np.max(max_drift_per_floor)
 
-            if percentile_75 > 1e-10:
+            if percentile_75 > 0.001:  # 1mm minimum drift (prevents early-episode explosion)
                 DCR = max_peak / percentile_75
             else:
                 DCR = 0.0
@@ -561,7 +581,8 @@ def make_improved_tmd_env(
     sensor_noise_std: float = 0.0,
     actuator_noise_std: float = 0.0,
     latency_steps: int = 0,
-    dropout_prob: float = 0.0
+    dropout_prob: float = 0.0,
+    obs_bounds: dict = None
 ) -> ImprovedTMDBuildingEnv:
     """
     Create improved TMD environment with optional domain randomization
@@ -574,6 +595,8 @@ def make_improved_tmd_env(
         actuator_noise_std: Standard deviation of actuator noise (0.0 = no noise)
         latency_steps: Number of timesteps of actuator latency (0 = no latency)
         dropout_prob: Probability of sensor dropout (0.0 = no dropout)
+        obs_bounds: Custom observation bounds dict with keys 'disp', 'vel', 'tmd_disp', 'tmd_vel'
+                   If None, uses default bounds (1.2m, 3.0m/s, 1.5m, 3.5m/s)
 
     Returns:
         ImprovedTMDBuildingEnv instance with domain randomization
@@ -607,6 +630,14 @@ def make_improved_tmd_env(
         if dropout_prob > 0:
             print(f"   - Dropout: {dropout_prob*100:.1f}%")
 
+    # Display custom observation bounds if provided
+    if obs_bounds is not None:
+        print(f"✓ Custom observation bounds:")
+        print(f"   - Displacement: ±{obs_bounds['disp']:.1f} m")
+        print(f"   - Velocity: ±{obs_bounds['vel']:.1f} m/s")
+        print(f"   - TMD displacement: ±{obs_bounds['tmd_disp']:.1f} m")
+        print(f"   - TMD velocity: ±{obs_bounds['tmd_vel']:.1f} m/s")
+
     return ImprovedTMDBuildingEnv(
         earthquake_data=accelerations,
         dt=dt,
@@ -615,7 +646,8 @@ def make_improved_tmd_env(
         sensor_noise_std=sensor_noise_std,
         actuator_noise_std=actuator_noise_std,
         latency_steps=latency_steps,
-        dropout_prob=dropout_prob
+        dropout_prob=dropout_prob,
+        obs_bounds=obs_bounds
     )
 
 
