@@ -93,7 +93,7 @@ class ImprovedTMDBuildingEnv(gym.Env):
         # Can be overridden for M7.4+ earthquakes
         if obs_bounds is None:
             obs_bounds = {
-                'disp': 1.2, 'vel': 3.0, 'tmd_disp': 1.5, 'tmd_vel': 3.5
+                'disp': 5.0, 'vel': 20.0, 'tmd_disp': 15.0, 'tmd_vel': 60.0
             }
         self.observation_space = spaces.Box(
             low=np.array([

@@ -97,7 +97,7 @@ def train_final_robust_rl_cl():
     print("   - Training variant: randomly sampled each episode")
 
     # Create directories
-    os.makedirs("rl_cl_models_alpha_2", exist_ok=True)
+    os.makedirs("models/rl_cl_models_alpha_2", exist_ok=True)
 
     # Training
     start_time = datetime.now()
@@ -204,7 +204,7 @@ def train_final_robust_rl_cl():
         )
 
         # Save
-        save_path = f"rl_cl_models_alpha_2/stage{stage_num}_{force_limit//1000}kN_final_robust.zip"
+        save_path = f"models/rl_cl_models_alpha_2/stage{stage_num}_{force_limit//1000}kN_final_robust.zip"
         model.save(save_path)
         print(f"\n💾 Saved: {save_path}")
 
@@ -213,13 +213,14 @@ def train_final_robust_rl_cl():
         test_file = test_files[magnitude]
 
         if os.path.exists(test_file):
-            # Use same adaptive bounds for testing
-            if magnitude in ['M7.4', 'M8.4']:
-                test_obs_bounds = {
-                    'disp': 3.0, 'vel': 15.0, 'tmd_disp': 10.0, 'tmd_vel': 40.0
-                }
-            else:
-                test_obs_bounds = None
+            # Use SAME bounds as training (must match!)
+            # CRITICAL: Test bounds must equal training bounds
+            test_obs_bounds = {
+                'disp': 5.0,      # ±5.0m (same as training)
+                'vel': 20.0,      # ±20.0m/s
+                'tmd_disp': 15.0, # ±15.0m
+                'tmd_vel': 60.0   # ±60.0m/s
+            }
 
             test_env = make_improved_tmd_env(test_file, max_force=force_limit, obs_bounds=test_obs_bounds)
             obs, _ = test_env.reset()
@@ -242,7 +243,7 @@ def train_final_robust_rl_cl():
 
     # Final
     training_time = datetime.now() - start_time
-    final_path = "rl_cl_models_alpha_2/rl_cl_models_alpha_2.zip"
+    final_path = "models/rl_cl_models_alpha_2/rl_cl_models_alpha_2.zip"
     model.save(final_path)
 
     print("="*70)
