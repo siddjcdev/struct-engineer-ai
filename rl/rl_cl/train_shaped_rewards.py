@@ -37,11 +37,12 @@ def train_shaped_rewards():
     print(f"   Earthquake: {os.path.basename(earthquake_file)}")
     print(f"   Force limit: {force_limit/1000:.0f} kN")
     print(f"   Timesteps: 200,000")
-    print(f"\n🎯 Shaped Reward Features:")
-    print(f"   • Displacement penalty: -10.0 (was -1.0)")
-    print(f"   • Velocity penalty: -3.0 (was -0.3)")
+    print(f"\n🎯 Shaped Reward Features (v3 - Pure Direction Learning):")
+    print(f"   • Displacement penalty: DISABLED (0.0)")
+    print(f"   • Velocity penalty: DISABLED (0.0)")
     print(f"   • Force direction bonus: +5.0 for correct, -2.0 for wrong")
-    print(f"   • No smoothness/acceleration penalties")
+    print(f"   • ONLY reward signal: Force direction (same signs = correct)")
+    print(f"   • Learn the ACTION (force direction), not the OUTCOME (displacement)")
 
     # Create directory
     os.makedirs("models/rl_shaped_rewards", exist_ok=True)
@@ -115,14 +116,16 @@ def train_shaped_rewards():
     force_history = np.array(force_history)
     vel_history = np.array(vel_history)
 
-    # Check if agent learned to oppose velocity
+    # Check if agent learned correct force direction
+    # CRITICAL: Due to F_eq[roof] -= control_force, SAME signs = correct!
     correct_direction = 0
     total_with_motion = 0
     for i in range(len(vel_history)):
         if abs(vel_history[i]) > 0.01:  # Significant motion
             total_with_motion += 1
-            if (vel_history[i] > 0 and force_history[i] < 0) or \
-               (vel_history[i] < 0 and force_history[i] > 0):
+            # Correct: vel>0 needs force>0, vel<0 needs force<0 (SAME signs!)
+            if (vel_history[i] > 0 and force_history[i] > 0) or \
+               (vel_history[i] < 0 and force_history[i] < 0):
                 correct_direction += 1
 
     if total_with_motion > 0:

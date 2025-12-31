@@ -372,19 +372,21 @@ class ImprovedTMDBuildingEnv(gym.Env):
         # SHAPED REWARD FUNCTION - Guides agent toward correct control
         # ================================================================
 
-        # CRITICAL INSIGHT: Displacement/velocity penalties create too much noise
-        # during exploration, drowning out the force direction signal.
-        # The agent can't distinguish cause (force direction) from effect (displacement change)
-        # when both are in the reward simultaneously.
+        # NEW INSIGHT: Force direction alone isn't enough - velocity-based switching
+        # can actually pump energy into the system if timing is wrong!
         #
-        # Solution: Use ONLY force direction bonus to learn correct control.
-        # Once the agent learns correct direction, displacement naturally decreases.
+        # The emergency_physics_check showed constant +1.0 achieves 18.38cm,
+        # but our velocity-based policy gets 24.94cm (worse than 21.02cm uncontrolled).
+        #
+        # Solution: Give agent SMALL displacement penalty as primary objective,
+        # Remove force direction bonus (it was teaching wrong behavior).
+        # Let agent discover the right control strategy through displacement minimization.
 
-        # 1. Displacement: DISABLED (outcome-based, creates noise during learning)
-        displacement_penalty = 0.0  # Was -10.0, disabled to isolate force direction signal
+        # 1. Displacement: Small penalty to guide learning
+        displacement_penalty = -1.0 * abs(roof_disp)  # Back to original, gentle guidance
 
-        # 2. Velocity: DISABLED (outcome-based, creates noise during learning)
-        velocity_penalty = 0.0  # Was -3.0, disabled to isolate force direction signal
+        # 2. Velocity: Small penalty
+        velocity_penalty = -0.3 * abs(roof_vel)  # Back to original
 
         # 3. Energy efficiency: Disabled
         force_penalty = 0.0
@@ -395,27 +397,10 @@ class ImprovedTMDBuildingEnv(gym.Env):
         # 5. Comfort: Disabled
         acceleration_penalty = 0.0
 
-        # 6. SHAPED REWARD: Reward for applying force in correct direction
-        # CRITICAL: Due to Newton's 3rd law in force application:
-        #   F_eq[11] -= control_force  (roof gets NEGATIVE of control_force)
-        #   F_eq[12] += control_force  (TMD gets POSITIVE of control_force)
-        # Therefore:
-        #   If roof moving right (+vel), we want to push roof LEFT (F_eq[11] < 0)
-        #   → Need control_force > 0 (POSITIVE!)
-        #   If roof moving left (-vel), we want to push roof RIGHT (F_eq[11] > 0)
-        #   → Need control_force < 0 (NEGATIVE!)
-        # So SAME signs = correct damping (not opposite!)
+        # 6. Force direction bonus: REMOVED
+        # Velocity-based switching was actually ADDING energy to the system
+        # Let agent learn optimal control through displacement minimization alone
         force_direction_bonus = 0.0
-        if abs(roof_vel) > 0.01:  # Only when there's significant motion
-            # Correct control: vel>0 needs force>0, vel<0 needs force<0 (SAME signs!)
-            if (roof_vel > 0 and control_force > 0) or (roof_vel < 0 and control_force < 0):
-                # Agent is applying force in correct direction!
-                force_magnitude = abs(control_force) / self.max_force
-                force_direction_bonus = +5.0 * force_magnitude  # STRONG positive reward
-            else:
-                # Agent is applying force in WRONG direction
-                force_magnitude = abs(control_force) / self.max_force
-                force_direction_bonus = -2.0 * force_magnitude  # Mild penalty
 
         # 7. DCR tracking (for metrics only, NOT used in reward)
         # Track peak drift for each floor over time, then calculate DCR
@@ -424,18 +409,17 @@ class ImprovedTMDBuildingEnv(gym.Env):
         floor_drifts = self._compute_interstory_drifts(self.displacement[:self.n_floors])
         self.peak_drift_per_floor = np.maximum(self.peak_drift_per_floor, floor_drifts)
 
-        # Combined reward - PURE FORCE DIRECTION LEARNING
-        # Reward ONLY based on whether force opposes velocity (correct physics)
-        # Displacement reduction should emerge naturally from correct control
+        # Combined reward - BACK TO BASICS (v4)
+        # Just gentle displacement/velocity penalties, no force direction shaping
+        # Let agent discover optimal control through trial and error
         reward = (
-            displacement_penalty +      # 0.0 (disabled - outcome-based)
-            velocity_penalty +          # 0.0 (disabled - outcome-based)
+            displacement_penalty +      # -1.0 * |disp| (original)
+            velocity_penalty +          # -0.3 * |vel| (original)
             force_penalty +             # 0.0
             smoothness_penalty +        # 0.0
             acceleration_penalty +      # 0.0
-            force_direction_bonus       # +5.0 or -2.0 (ONLY reward signal!)
+            force_direction_bonus       # 0.0 (removed - was teaching wrong behavior)
             # NO dcr_penalty - let it emerge naturally
-            # NO displacement/velocity penalty - learn action, not outcome
         )
 
         # Update previous force for next step
