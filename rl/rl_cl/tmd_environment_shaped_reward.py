@@ -382,11 +382,11 @@ class ImprovedTMDBuildingEnv(gym.Env):
         # Remove force direction bonus (it was teaching wrong behavior).
         # Let agent discover the right control strategy through displacement minimization.
 
-        # 1. Displacement: Small penalty to guide learning
-        displacement_penalty = -1.0 * abs(roof_disp)  # Back to original, gentle guidance
+        # 1. Displacement: STRONGER penalty to amplify learning signal (v5)
+        displacement_penalty = -5.0 * abs(roof_disp)  # 5× stronger than original
 
-        # 2. Velocity: Small penalty
-        velocity_penalty = -0.3 * abs(roof_vel)  # Back to original
+        # 2. Velocity: STRONGER penalty to amplify learning signal (v5)
+        velocity_penalty = -1.5 * abs(roof_vel)  # 5× stronger than original
 
         # 3. Energy efficiency: Disabled
         force_penalty = 0.0
@@ -409,17 +409,17 @@ class ImprovedTMDBuildingEnv(gym.Env):
         floor_drifts = self._compute_interstory_drifts(self.displacement[:self.n_floors])
         self.peak_drift_per_floor = np.maximum(self.peak_drift_per_floor, floor_drifts)
 
-        # Combined reward - BACK TO BASICS (v4)
-        # Just gentle displacement/velocity penalties, no force direction shaping
-        # Let agent discover optimal control through trial and error
+        # Combined reward - STRONGER SIGNAL (v5)
+        # Amplified displacement/velocity penalties 5× to improve learning
+        # No force direction shaping, let agent discover optimal control
         reward = (
-            displacement_penalty +      # -1.0 * |disp| (original)
-            velocity_penalty +          # -0.3 * |vel| (original)
+            displacement_penalty +      # -5.0 * |disp| (5× stronger)
+            velocity_penalty +          # -1.5 * |vel| (5× stronger)
             force_penalty +             # 0.0
             smoothness_penalty +        # 0.0
             acceleration_penalty +      # 0.0
             force_direction_bonus       # 0.0 (removed - was teaching wrong behavior)
-            # NO dcr_penalty - let it emerge naturally
+            # NO dcr_penalty - let it emerge naturally (proven to work)
         )
 
         # Update previous force for next step
