@@ -38,22 +38,30 @@ class RLCLController:
         self.max_force = 150000.0  # 150 kN
 
         # SAFETY: Observation bounds (MUST match training environment)
-        # These bounds prevent out-of-distribution inputs on extreme earthquakes
+        # UPDATED: 8-value observation space [roof, floor8, floor6, TMD]
+        # CRITICAL: These MUST match train_final_robust_rl_cl.py obs_bounds
+        # Updated to match new training (±5.0m disp, ±20.0m/s vel, ±15.0m TMD)
+        self.obs_bounds_array = np.array([
+            [-5.0, -20.0, -5.0, -20.0, -5.0, -20.0, -15.0, -60.0],  # CHANGED: was -1.2, -3.0, -1.2, -3.0, -1.2, -3.0, -1.5, -3.5
+            [5.0, 20.0, 5.0, 20.0, 5.0, 20.0, 15.0, 60.0]           # CHANGED: was 1.2, 3.0, 1.2, 3.0, 1.2, 3.0, 1.5, 3.5
+        ], dtype=np.float32)
+
+        # Legacy 4-value bounds (kept for backward compatibility with predict_single/batch)
         self.obs_bounds = {
-            'roof_disp': (-0.5, 0.5),      # ±50 cm
-            'roof_vel': (-2.0, 2.0),       # ±2.0 m/s
-            'tmd_disp': (-0.6, 0.6),       # ±60 cm
-            'tmd_vel': (-2.5, 2.5)         # ±2.5 m/s
+            'roof_disp': (-0.5, 0.5),      # ±50 cm (legacy)
+            'roof_vel': (-2.0, 2.0),       # ±2.0 m/s (legacy)
+            'tmd_disp': (-0.6, 0.6),       # ±60 cm (legacy)
+            'tmd_vel': (-2.5, 2.5)         # ±2.5 m/s (legacy)
         }
         self.clip_warnings = 0  # Track how many times we clip observations
 
         print("✅ RLCLController: RL CL model loaded!")
         print("   RLCLController: RL CL performance:")
-        print("   RLCLController:     • TEST3 (M4.5): 24.67 cm (21.8% vs passive)")
-        print("   RLCLController:     • TEST4 (M6.9): 20.80 cm (32% vs passive)")
-        print("   RLCLController:     • Average: ~21.5 cm, Beats fuzzy by 14%")
-        print(f"   RLCLController:     • Observation bounds: roof_disp={self.obs_bounds['roof_disp']}, "
-              f"roof_vel={self.obs_bounds['roof_vel']}")
+        print("   RLCLController:     • M7.4 (0.75g PGA): Target <35 cm (85-91% reduction)")  # CHANGED: was "TEST3 (M4.5): 24.67 cm"
+        print("   RLCLController:     • M8.4 (0.90g PGA): Target <45 cm (87-92% reduction)")  # CHANGED: was "TEST4 (M6.9): 20.80 cm"
+        print("   RLCLController:     • Trained with proper train/test split + curriculum")   # CHANGED: was "Average: ~21.5 cm"
+        print(f"   RLCLController:     • Observation space: 8 values (roof, floor8, floor6, TMD)")
+        print(f"   RLCLController:     • Bounds: ±5.0m disp, ±20.0m/s vel (floors), ±15.0m TMD disp, ±60.0m/s TMD vel")  # CHANGED: was "±1.2m disp, ±3.0m/s vel"
     
     def predict_single(self, roof_disp, roof_vel, tmd_disp, tmd_vel):
         """Single prediction with safety clipping"""
@@ -122,14 +130,24 @@ class RLCLController:
             # if rl_cl_path not in sys.path:
             #     sys.path.insert(0, rl_cl_path)
 
-            from .rl_cl_tmd_environment import ImprovedTMDBuildingEnv
+            #from .rl_cl_tmd_environment import ImprovedTMDBuildingEnv
+            from .tmd_environment_shaped_reward import ImprovedTMDBuildingEnv
 
-            # Create environment
+
+            # Create environment with SAME obs_bounds as training
+            # CRITICAL: Must match train_final_robust_rl_cl.py obs_bounds
+            obs_bounds = {
+                'disp': 5.0,      # ±5.0m (same as training)
+                'vel': 20.0,      # ±20.0m/s
+                'tmd_disp': 15.0, # ±15.0m
+                'tmd_vel': 60.0   # ±60.0m/s
+            }
             env = ImprovedTMDBuildingEnv(
                 earthquake_data=earthquake_data,
                 dt=dt,
                 max_force=self.max_force,
-                earthquake_name="API Simulation"
+                earthquake_name="API Simulation",
+                obs_bounds=obs_bounds  # ADDED: Match training bounds
             )
 
             # Run episode
@@ -139,12 +157,9 @@ class RLCLController:
 
             while not done:
                 # SAFETY: Clip observation to training bounds before inference
-                # This prevents catastrophic failures on extreme earthquakes
-                obs_clipped = np.clip(obs,
-                                     [self.obs_bounds['roof_disp'][0], self.obs_bounds['roof_vel'][0],
-                                      self.obs_bounds['tmd_disp'][0], self.obs_bounds['tmd_vel'][0]],
-                                     [self.obs_bounds['roof_disp'][1], self.obs_bounds['roof_vel'][1],
-                                      self.obs_bounds['tmd_disp'][1], self.obs_bounds['tmd_vel'][1]])
+                # FIXED: Now handles 8-value observations correctly
+                # obs = [roof_disp, roof_vel, floor8_disp, floor8_vel, floor6_disp, floor6_vel, tmd_disp, tmd_vel]
+                obs_clipped = np.clip(obs, self.obs_bounds_array[0], self.obs_bounds_array[1])
 
                 # Get action from model
                 action, _ = self.model.predict(obs_clipped, deterministic=True)

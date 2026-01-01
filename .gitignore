@@ -256,3 +256,10 @@ matlab/src/tmd/*.png
 # Fuzzy controller lookup table cache
 restapi/fuzzy/fuzzy_lookup_table_cache.pkl
 
+rl/rl_cl/models/
+matlab/datasets/PEER_*.original
+matlab/datasets/PEER_*.v1
+matlab/datasets/training_set/TRAIN_*.original
+matlab/datasets/training_set/TRAIN_*.v1
+
+restapi/models/

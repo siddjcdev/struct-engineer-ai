@@ -356,12 +356,12 @@ function results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt
         if isfield(fuzzy_results, 'peak_disp_by_floor')
             results.Fuzzy.peak_disp_by_floor(:, scenario_idx) = fuzzy_results.peak_disp_by_floor;
         else
-            fprintf('  ⚠️  Fuzzy: peak_disp_by_floor not returned by API\n');
+            % fprintf('  ⚠️  Fuzzy: peak_disp_by_floor not returned by API\n');
         end
         if isfield(fuzzy_results, 'rms_roof_accel')
             results.Fuzzy.rms_roof_accel(scenario_idx) = fuzzy_results.rms_roof_accel;
         else
-            fprintf('  ⚠️  Fuzzy: rms_roof_accel not returned by API (using 0)\n');
+            % fprintf('  ⚠️  Fuzzy: rms_roof_accel not returned by API (using 0)\n');
         end
         results.Fuzzy.time(scenario_idx) = toc;
         fprintf('Peak: %.2f cm, Force: %.1f kN (%.2f s)\n', ...
@@ -380,12 +380,12 @@ function results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt
         if isfield(rl_results, 'peak_disp_by_floor')
             results.RL_Base.peak_disp_by_floor(:, scenario_idx) = rl_results.peak_disp_by_floor;
         else
-            fprintf('  ⚠️  RL Base: peak_disp_by_floor not returned by API\n');
+            % fprintf('  ⚠️  RL Base: peak_disp_by_floor not returned by API\n');
         end
         if isfield(rl_results, 'rms_roof_accel')
             results.RL_Base.rms_roof_accel(scenario_idx) = rl_results.rms_roof_accel;
         else
-            fprintf('  ⚠️  RL Base: rms_roof_accel not returned by API (using 0)\n');
+            % fprintf('  ⚠️  RL Base: rms_roof_accel not returned by API (using 0)\n');
         end
         results.RL_Base.time(scenario_idx) = toc;
         fprintf('Peak: %.2f cm, Force: %.1f kN (%.2f s)\n', ...
@@ -404,12 +404,12 @@ function results = run_comparison(API_URL, scenarios, N, m0, k0, zeta_target, dt
         if isfield(rl_cl_results, 'peak_disp_by_floor')
             results.RL_CL.peak_disp_by_floor(:, scenario_idx) = rl_cl_results.peak_disp_by_floor;
         else
-            fprintf('  ⚠️  RL_CL: peak_disp_by_floor not returned by API\n');
+            % fprintf('  ⚠️  RL_CL: peak_disp_by_floor not returned by API\n');
         end
         if isfield(rl_cl_results, 'rms_roof_accel')
             results.RL_CL.rms_roof_accel(scenario_idx) = rl_cl_results.rms_roof_accel;
         else
-            fprintf('  ⚠️  RL_CL: rms_roof_accel not returned by API (using 0)\n');
+            % fprintf('  ⚠️  RL_CL: rms_roof_accel not returned by API (using 0)\n');
         end
         results.RL_CL.time(scenario_idx) = toc;
         fprintf('Peak: %.2f cm, Force: %.1f kN (%.2f s)\n\n', ...
@@ -1490,7 +1490,7 @@ function create_analysis_plots(results, scenarios)
 
     sgtitle('4-Way TMD Controller - Comprehensive Analysis', 'FontSize', 14, 'FontWeight', 'bold');
 
-    saveas(fig, '4way_analysis_plots.png');
+    saveas(fig, ['4way_analysis_plots_' datestr(now, 'yyyy-mm-dd_HHMMSS') '.png']);
 end
 
 function save_results(results, scenarios, API_URL, test_name)

@@ -65,7 +65,7 @@ ROOT_PATH = Path(__file__).parent
 DATA_FILE = Path("data/simulation.json")
 #MODEL_FILE = (Path(__file__).parent.parent / "neuralnet" / "src" / "models" / "tmd_trained_model_peer.pth").resolve()
 RL_MODEL_FILE = Path("models/rl_model.zip")
-RL_CL_MODEL_FILE = Path("models/rl_cl_model_final.zip")
+RL_CL_MODEL_FILE = Path("models/rl_cl_final_robust.zip")
 
 # For deployment: Use environment variable if available, otherwise use a relative path
 MATLAB_OUTPUT_DIR_ENV = '' #os.getenv('MATLAB_OUTPUT_DIR', None)

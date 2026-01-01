@@ -63,3 +63,27 @@ The codebase includes tools to create synthetic test datasets, convert real sens
 ## Contact / Next steps
 
 If you want further help documenting functions in-line, adding plots or examples to the README, or preparing an experiment report, tell me which outputs (figures, sample datasets) you'd like included and I will update the repository accordingly.
+
+# Training
+Modified to work seamlessly with the aggregated file and provide helpful feedback when using it. Example workflow:
+
+## Step 1: Create aggregated training file
+This script takes 80% of data from all earthquake files and combines them into a single aggregated training file. Key features:
+- Takes 80% from the beginning of each earthquake file
+- Combines all data into a single CSV file
+- Provides detailed statistics about the aggregation
+- Default output: matlab/datasets aggregated_train_80pct.csv
+Usage:
+python rl/rl_cl/create_aggregated_training_file.py \
+  --earthquakes matlab/datasets/*.csv \
+  --output matlab/datasets/aggregated_train_80pct.csv
+
+python rl/rl_cl/create_aggregated_training_file.py \
+  --earthquakes matlab/datasets/TEST3_small_earthquake_M4.5.csv \
+                matlab/datasets/TEST4_large_earthquake_M6.9.csv \
+                matlab/datasets/TEST5_earthquake_M6.7.csv \
+  --output matlab/datasets/aggregated_train_80pct.csv
+
+## Step 2: Train on the aggregated file
+python rl/rl_cl/train_rl_cl.py \
+  --earthquakes matlab/datasets/aggregated_train_80pct.csv
