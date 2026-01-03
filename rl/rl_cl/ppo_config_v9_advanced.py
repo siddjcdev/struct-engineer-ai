@@ -81,8 +81,7 @@ class V9PPOHyperparameters:
     # Policy architecture - ENHANCED (deeper network)
     POLICY_TYPE = "MlpPolicy"
     NETWORK_ARCH = [256, 256, 256]  # THREE layers (was two in v8)
-    ACTIVATION_FN = torch.nn.ReLU
-    USE_TANH_OUTPUT = True  # Use Tanh for bounded actions
+    ACTIVATION_FN = torch.nn.Tanh  # Tanh works better for earthquake control (bounded actions)
 
     # Learning optimization
     GAMMA = 0.99               # Discount factor
@@ -114,15 +113,13 @@ class V9PPOHyperparameters:
         if use_advanced_arch:
             return {
                 'net_arch': V9PPOHyperparameters.NETWORK_ARCH,
-                'activation_fn': V9PPOHyperparameters.ACTIVATION_FN,
-                # Use Tanh for the action output (better for bounded actions)
-                'squash_output': V9PPOHyperparameters.USE_TANH_OUTPUT
+                'activation_fn': V9PPOHyperparameters.ACTIVATION_FN
             }
         else:
             # Fallback to v8 architecture
             return {
                 'net_arch': [256, 256],
-                'activation_fn': V9PPOHyperparameters.ACTIVATION_FN
+                'activation_fn': torch.nn.ReLU
             }
 
 
