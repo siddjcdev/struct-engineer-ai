@@ -28,6 +28,20 @@ Expected Results:
 - More stable learning on M7.4 and M8.4
 - Target: Beat v7-SAC (219.30 cm on M7.4)
 
+ Wrapper Features (if needed):
+-----------------------------
+# Instead of:
+env = make_improved_tmd_env(eq_file, max_force=force_limit)
+
+# Use:
+from tmd_environment_ppo_wrapper import make_ppo_friendly_env
+env = make_ppo_friendly_env(
+    eq_file, 
+    max_force=force_limit,
+    normalize_obs=True,      # Normalize observations
+    clip_reward=10.0         # Clip extreme rewards
+)
+
 Usage: python train_v8_ppo_optimized.py
 """
 

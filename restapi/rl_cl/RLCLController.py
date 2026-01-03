@@ -15,7 +15,7 @@ from typing import List
 import uvicorn
 import numpy as np
 import torch
-from stable_baselines3 import SAC
+from stable_baselines3 import SAC, PPO
 import time
 import os
 
@@ -33,8 +33,24 @@ class RLCLController:
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"RLCLController: Model not found: {model_path}")
 
-        # Load SAC model
-        self.model = SAC.load(model_path, device='cpu')
+        # Auto-detect model type (SAC or PPO)
+        # Try loading as PPO first, fall back to SAC
+        model_type = None
+        try:
+            self.model = PPO.load(model_path, device='cpu')
+            model_type = "PPO"
+        except Exception as e_ppo:
+            try:
+                self.model = SAC.load(model_path, device='cpu')
+                model_type = "SAC"
+            except Exception as e_sac:
+                raise RuntimeError(
+                    f"Failed to load model as PPO or SAC:\n"
+                    f"  PPO error: {e_ppo}\n"
+                    f"  SAC error: {e_sac}"
+                )
+
+        self.model_type = model_type
         self.max_force = 150000.0  # 150 kN
 
         # SAFETY: Observation bounds (MUST match training environment)
@@ -55,13 +71,15 @@ class RLCLController:
         }
         self.clip_warnings = 0  # Track how many times we clip observations
 
-        print("✅ RLCLController: RL CL model loaded!")
+        print(f"✅ RLCLController: RL CL model loaded successfully!")
+        print(f"   RLCLController:     Model type: {model_type}")
+        print(f"   RLCLController:     Device: cpu")
         print("   RLCLController: RL CL performance:")
-        print("   RLCLController:     • M7.4 (0.75g PGA): Target <35 cm (85-91% reduction)")  # CHANGED: was "TEST3 (M4.5): 24.67 cm"
-        print("   RLCLController:     • M8.4 (0.90g PGA): Target <45 cm (87-92% reduction)")  # CHANGED: was "TEST4 (M6.9): 20.80 cm"
-        print("   RLCLController:     • Trained with proper train/test split + curriculum")   # CHANGED: was "Average: ~21.5 cm"
+        print("   RLCLController:     • M7.4 (0.75g PGA): Target <35 cm (85-91% reduction)")
+        print("   RLCLController:     • M8.4 (0.90g PGA): Target <45 cm (87-92% reduction)")
+        print("   RLCLController:     • Trained with proper train/test split + curriculum")
         print(f"   RLCLController:     • Observation space: 8 values (roof, floor8, floor6, TMD)")
-        print(f"   RLCLController:     • Bounds: ±5.0m disp, ±20.0m/s vel (floors), ±15.0m TMD disp, ±60.0m/s TMD vel")  # CHANGED: was "±1.2m disp, ±3.0m/s vel"
+        print(f"   RLCLController:     • Bounds: ±5.0m disp, ±20.0m/s vel (floors), ±15.0m TMD disp, ±60.0m/s TMD vel")
     
     def predict_single(self, roof_disp, roof_vel, tmd_disp, tmd_vel):
         """Single prediction with safety clipping"""
@@ -131,7 +149,8 @@ class RLCLController:
             #     sys.path.insert(0, rl_cl_path)
 
             #from .rl_cl_tmd_environment import ImprovedTMDBuildingEnv
-            from .tmd_environment_shaped_reward import ImprovedTMDBuildingEnv
+            #from .tmd_environment_shaped_reward import ImprovedTMDBuildingEnv
+            from .tmd_environment_ppo_wrapper import make_ppo_friendly_env
 
 
             # Create environment with SAME obs_bounds as training
@@ -142,12 +161,19 @@ class RLCLController:
                 'tmd_disp': 15.0, # ±15.0m
                 'tmd_vel': 60.0   # ±60.0m/s
             }
-            env = ImprovedTMDBuildingEnv(
-                earthquake_data=earthquake_data,
-                dt=dt,
+            # env = ImprovedTMDBuildingEnv(
+            #     earthquake_data=earthquake_data,
+            #     dt=dt,
+            #     max_force=self.max_force,
+            #     earthquake_name="API Simulation",
+            #     obs_bounds=obs_bounds  # ADDED: Match training bounds
+            # )
+            #from tmd_environment_ppo_wrapper import make_ppo_friendly_env
+            env = make_ppo_friendly_env(
+                earthquake_data, 
                 max_force=self.max_force,
-                earthquake_name="API Simulation",
-                obs_bounds=obs_bounds  # ADDED: Match training bounds
+                normalize_obs=True,      # Normalize observations
+                clip_reward=10.0         # Clip extreme rewards
             )
 
             # Run episode
