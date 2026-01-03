@@ -160,7 +160,10 @@ def update_model_for_new_stage(model, env, stage):
     # Update environment
     env_old = model.get_env()
     model.set_env(env)
-    env_old.close()
+
+    # Close old environment if it exists
+    if env_old is not None:
+        env_old.close()
 
     # Update learning rate schedule
     lr_schedule = V9CurriculumStages.get_learning_rate_schedule(stage)
