@@ -62,25 +62,25 @@ def create_parallel_envs(train_files, force_limit, n_envs=4):
     return env
 
 
-def create_entropy_schedule(stage):
+def get_entropy_coefficient(stage):
     """
-    Create entropy coefficient schedule if enabled
+    Get entropy coefficient for the stage
 
     Args:
         stage: Stage configuration dict
 
     Returns:
-        Entropy coefficient (float or schedule function)
+        Entropy coefficient (float)
+
+    Note: PPO doesn't support callable ent_coef schedules in stable-baselines3,
+    so we use fixed values per stage. For annealing, use the average value.
     """
     if stage.get('ent_schedule', False):
+        # Use average of initial and final for this stage
         initial_ent = stage['ent_coef']
         final_ent = stage.get('final_ent', initial_ent * 0.1)
-
-        def ent_schedule(progress_remaining):
-            # Linear decay from initial to final
-            return final_ent + (initial_ent - final_ent) * progress_remaining
-
-        return ent_schedule
+        avg_ent = (initial_ent + final_ent) / 2.0
+        return avg_ent
     else:
         return stage['ent_coef']
 
@@ -100,8 +100,8 @@ def create_v9_ppo_model(env, stage, device):
     # Get learning rate schedule
     lr_schedule = V9CurriculumStages.get_learning_rate_schedule(stage)
 
-    # Get entropy schedule
-    ent_schedule = create_entropy_schedule(stage)
+    # Get entropy coefficient (fixed value, not callable)
+    ent_coef = get_entropy_coefficient(stage)
 
     # Get advanced policy kwargs
     policy_kwargs = V9PPOHyperparameters.get_policy_kwargs(use_advanced_arch=True)
@@ -118,9 +118,9 @@ def create_v9_ppo_model(env, stage, device):
         print(f"      learning_rate: {stage['learning_rate']:.0e} (fixed)")
 
     if stage.get('ent_schedule'):
-        print(f"      ent_coef: {stage['ent_coef']} → {stage['final_ent']} (annealing)")
+        print(f"      ent_coef: {ent_coef:.4f} (averaged from {stage['ent_coef']} → {stage['final_ent']})")
     else:
-        print(f"      ent_coef: {stage['ent_coef']} (fixed)")
+        print(f"      ent_coef: {ent_coef} (fixed)")
 
     print()
 
@@ -135,7 +135,7 @@ def create_v9_ppo_model(env, stage, device):
         gae_lambda=V9PPOHyperparameters.GAE_LAMBDA,
         clip_range=V9PPOHyperparameters.CLIP_RANGE,
         clip_range_vf=V9PPOHyperparameters.CLIP_RANGE_VF,
-        ent_coef=ent_schedule,
+        ent_coef=ent_coef,  # Fixed float value
         vf_coef=V9PPOHyperparameters.VF_COEF,
         max_grad_norm=V9PPOHyperparameters.MAX_GRAD_NORM,
         policy_kwargs=policy_kwargs,
@@ -171,14 +171,13 @@ def update_model_for_new_stage(model, env, stage):
         print(f"      learning_rate: {lr_schedule:.0e} (fixed)")
         model.learning_rate = lr_schedule
 
-    # Update entropy coefficient
-    ent_schedule = create_entropy_schedule(stage)
-    if callable(ent_schedule):
-        print(f"      ent_coef: Annealing ({stage['ent_coef']} → {stage['final_ent']})")
-        model.ent_coef = ent_schedule
+    # Update entropy coefficient (fixed value, not callable)
+    ent_coef = get_entropy_coefficient(stage)
+    if stage.get('ent_schedule'):
+        print(f"      ent_coef: {ent_coef:.4f} (averaged from {stage['ent_coef']} → {stage['final_ent']})")
     else:
-        print(f"      ent_coef: {ent_schedule} (fixed)")
-        model.ent_coef = ent_schedule
+        print(f"      ent_coef: {ent_coef} (fixed)")
+    model.ent_coef = ent_coef
 
     # Recreate optimizer with new learning rate
     # Note: If using schedule, get initial value
@@ -190,6 +189,37 @@ def update_model_for_new_stage(model, env, stage):
     )
 
     print()
+
+
+def find_last_completed_stage(output_dir, stages):
+    """
+    Find the last completed stage by checking for checkpoint files
+
+    Args:
+        output_dir: Directory where checkpoints are saved
+        stages: List of stage configurations
+
+    Returns:
+        Tuple of (last_completed_stage_idx, checkpoint_path) or (None, None) if no checkpoints
+    """
+    if not os.path.exists(output_dir):
+        return None, None
+
+    # Check stages in reverse order (latest first)
+    for stage_idx in range(len(stages) - 1, -1, -1):
+        stage_num = stage_idx + 1
+        stage = stages[stage_idx]
+        force_limit = stage['force_limit']
+
+        # Only look for successfully completed stages (not INTERRUPTED or ERROR checkpoints)
+        checkpoint_path = f"{output_dir}/stage{stage_num}_{force_limit//1000}kN.zip"
+
+        if os.path.exists(checkpoint_path):
+            # Verify it's not a partial/emergency checkpoint
+            if "INTERRUPTED" not in checkpoint_path and "ERROR" not in checkpoint_path:
+                return stage_idx, checkpoint_path
+
+    return None, None
 
 
 def test_on_earthquake(model, test_file, force_limit):
@@ -263,13 +293,38 @@ def train_v9_advanced():
     output_dir = "models/rl_v9_advanced"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Training loop
-    start_time = datetime.now()
-    model = None
+    # Check for existing checkpoints
     n_envs = V9PPOHyperparameters.N_ENVS
     stages = V9CurriculumStages.STAGES
 
+    last_completed_idx, checkpoint_path = find_last_completed_stage(output_dir, stages)
+
+    if last_completed_idx is not None:
+        print(f"\n{'='*70}")
+        print(f"  🔄 RESUMING FROM CHECKPOINT")
+        print(f"{'='*70}")
+        print(f"\n   Found checkpoint: {checkpoint_path}")
+        print(f"   Last completed: Stage {last_completed_idx + 1}/{len(stages)}")
+        print(f"   Loading model from checkpoint...\n")
+
+        # Load the checkpoint
+        model = PPO.load(checkpoint_path, device=device)
+        print(f"   ✅ Model loaded successfully!")
+        print(f"   Will resume from Stage {last_completed_idx + 2}/{len(stages)}\n")
+
+        start_stage_idx = last_completed_idx + 1
+    else:
+        print(f"\n   No checkpoints found - starting fresh training\n")
+        model = None
+        start_stage_idx = 0
+
+    # Training loop
+    start_time = datetime.now()
+
     for stage_idx, stage in enumerate(stages):
+        # Skip already completed stages
+        if stage_idx < start_stage_idx:
+            continue
         stage_num = stage_idx + 1
         magnitude = stage['magnitude']
         force_limit = stage['force_limit']
@@ -288,36 +343,74 @@ def train_v9_advanced():
 
         # Create or update model
         if model is None:
+            # Starting fresh (no checkpoint)
             print(f"🤖 Creating v9 Advanced PPO model...")
             print(f"   Device: {device}\n")
             model = create_v9_ppo_model(env, stage, device)
+        elif stage_idx == start_stage_idx and start_stage_idx > 0:
+            # Resuming from checkpoint - need to update for new stage
+            print(f"🔄 Resuming training from checkpoint...\n")
+            update_model_for_new_stage(model, env, stage)
         else:
+            # Continuing from previous stage in same run
             print(f"🔄 Continuing from Stage {stage_num-1}...\n")
             update_model_for_new_stage(model, env, stage)
 
-        # Train
-        print(f"🚀 Training Stage {stage_num}...")
-        model.learn(
-            total_timesteps=timesteps,
-            reset_num_timesteps=False,
-            progress_bar=True
-        )
+        # Train with error handling
+        try:
+            print(f"🚀 Training Stage {stage_num}...")
+            model.learn(
+                total_timesteps=timesteps,
+                reset_num_timesteps=False,
+                progress_bar=True
+            )
 
-        # Save checkpoint
-        save_path = f"{output_dir}/stage{stage_num}_{force_limit//1000}kN.zip"
-        model.save(save_path)
-        print(f"\n💾 Saved: {save_path}")
+            # Save checkpoint after successful training
+            save_path = f"{output_dir}/stage{stage_num}_{force_limit//1000}kN.zip"
+            model.save(save_path)
+            print(f"\n💾 Saved: {save_path}")
 
-        # Test on held-out earthquake
-        test_file = test_files[magnitude]
-        print(f"\n📊 Testing on HELD-OUT test earthquake...")
-        print(f"   Test file: {os.path.basename(test_file)}")
+            # Test on held-out earthquake
+            test_file = test_files[magnitude]
+            print(f"\n📊 Testing on HELD-OUT test earthquake...")
+            print(f"   Test file: {os.path.basename(test_file)}")
 
-        peak_cm = test_on_earthquake(model, test_file, force_limit)
-        print(f"   Peak displacement: {peak_cm:.2f} cm")
-        print(f"\n✅ Stage {stage_num} complete!\n")
+            peak_cm = test_on_earthquake(model, test_file, force_limit)
+            print(f"   Peak displacement: {peak_cm:.2f} cm")
+            print(f"\n✅ Stage {stage_num} complete!\n")
 
-        # Close environments
+        except KeyboardInterrupt:
+            print(f"\n\n⚠️  Training interrupted by user!")
+            print(f"   Saving emergency checkpoint...")
+
+            # Save emergency checkpoint
+            emergency_path = f"{output_dir}/stage{stage_num}_INTERRUPTED_{force_limit//1000}kN.zip"
+            model.save(emergency_path)
+            print(f"   💾 Emergency checkpoint saved: {emergency_path}")
+            print(f"\n   You can resume training by running the script again.")
+            print(f"   Training will automatically resume from Stage {stage_num}.\n")
+
+            # Close environment before exiting
+            env.close()
+            raise
+
+        except Exception as e:
+            print(f"\n\n❌ ERROR during Stage {stage_num} training!")
+            print(f"   Error: {e}")
+            print(f"\n   Saving emergency checkpoint...")
+
+            # Save emergency checkpoint
+            emergency_path = f"{output_dir}/stage{stage_num}_ERROR_{force_limit//1000}kN.zip"
+            model.save(emergency_path)
+            print(f"   💾 Emergency checkpoint saved: {emergency_path}")
+            print(f"\n   You can resume training by running the script again.")
+            print(f"   Training will automatically resume from the last successful stage.\n")
+
+            # Close environment before exiting
+            env.close()
+            raise
+
+        # Close environments after successful stage
         env.close()
 
     # Final model save
@@ -330,18 +423,22 @@ def train_v9_advanced():
     print("  🎉 TRAINING COMPLETE!")
     print("="*70)
     print(f"\n   Total training time: {training_time}")
+    if start_stage_idx > 0:
+        print(f"   Resumed from: Stage {start_stage_idx + 1}/{len(stages)}")
+        print(f"   Stages trained in this run: {len(stages) - start_stage_idx}/{len(stages)}")
     print(f"   Training device: {device.upper()}")
     if gpu_name:
         print(f"   GPU: {gpu_name}")
     print(f"   Final model: {final_path}")
     print(f"\n   V9 Advanced Features:")
-    print(f"   • Deeper network: [256, 256, 256]")
+    print(f"   • Deeper network: [256, 256, 256] with Tanh")
     print(f"   • Larger n_steps: 2048-8192 (reduced variance)")
     print(f"   • Balanced batch_size: 256-512")
     print(f"   • Optimized n_epochs: 10-20")
     print(f"   • Cosine LR annealing (smoother decay)")
-    print(f"   • Refined entropy scheduling")
+    print(f"   • Entropy coefficient averaging")
     print(f"   • Tighter value clipping: 0.15")
+    print(f"   • Automatic checkpoint recovery")
     print(f"   • Total timesteps: {V9CurriculumStages.get_total_timesteps():,}")
 
     # Final evaluation
