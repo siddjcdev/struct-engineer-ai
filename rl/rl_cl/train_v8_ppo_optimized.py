@@ -50,6 +50,7 @@ import os
 import glob
 import random
 from datetime import datetime
+import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.monitor import Monitor
@@ -68,17 +69,36 @@ def make_env_factory(train_files, force_limit):
 def train_v8_ppo_optimized():
     """Train with PPO-optimized strategy"""
 
-    print("="*70)
-    print("  v8 TRAINING - OPTIMIZED PPO STRATEGY")
-    print("="*70)
-    print("\n🎯 PPO-Specific Optimizations:")
+    # Auto-detect CUDA availability
+    gpu_name = None
+    if torch.cuda.is_available():
+        device = 'cuda'
+        gpu_name = torch.cuda.get_device_name(0)
+        print("="*70)
+        print("  v8 TRAINING - OPTIMIZED PPO STRATEGY (GPU ACCELERATED)")
+        print("="*70)
+        print(f"\n🚀 GPU Detected: {gpu_name}")
+        print(f"   Using device: {device}\n")
+    else:
+        device = 'cpu'
+        print("="*70)
+        print("  v8 TRAINING - OPTIMIZED PPO STRATEGY")
+        print("="*70)
+        print("\n⚠️  No GPU detected - using CPU")
+        print("   Training will be slower. Consider using a GPU for faster training.\n")
+
+    print("🎯 PPO-Specific Optimizations:")
     print("   • 2× more timesteps (PPO needs more data)")
     print("   • 4 parallel environments (faster collection)")
     print("   • Adaptive n_steps per stage (match episode length)")
     print("   • Curriculum learning rate (3e-4 → 5e-5)")
     print("   • Entropy annealing (exploration → exploitation)")
     print("   • Larger batches (256) for stability")
-    print("   • Value function clipping (prevent divergence)\n")
+    print("   • Value function clipping (prevent divergence)")
+    if device == 'cuda':
+        print("   • GPU acceleration (CUDA)\n")
+    else:
+        print()
 
     print("📊 Dataset Strategy:")
     print("   TRAINING: Improved synthetic earthquakes (training_set_v2/)")
@@ -222,7 +242,8 @@ def train_v8_ppo_optimized():
 
         # Create or update model
         if model is None:
-            print(f"🤖 Creating PPO model (OPTIMIZED)...\n")
+            print(f"🤖 Creating PPO model (OPTIMIZED)...")
+            print(f"   Device: {device}\n")
             model = PPO(
                 "MlpPolicy",
                 env,
@@ -242,7 +263,7 @@ def train_v8_ppo_optimized():
                     activation_fn=torch.nn.ReLU
                 ),
                 verbose=1,
-                device='cpu'
+                device=device              # Auto-detected (cuda or cpu)
             )
         else:
             print(f"🔄 Continuing from Stage {stage_num-1}...")
@@ -309,6 +330,9 @@ def train_v8_ppo_optimized():
     print("  🎉 TRAINING COMPLETE!")
     print("="*70)
     print(f"\n   Total training time: {training_time}")
+    print(f"   Training device: {device.upper()}")
+    if device == 'cuda':
+        print(f"   GPU: {gpu_name}")
     print(f"   Final model: {final_path}")
     print(f"\n   This model uses:")
     print(f"   • PPO with optimized hyperparameters")
@@ -316,6 +340,7 @@ def train_v8_ppo_optimized():
     print(f"   • Adaptive n_steps (1024 → 4096)")
     print(f"   • Curriculum learning rate (3e-4 → 5e-5)")
     print(f"   • Entropy annealing (0.02 → 0.001)")
+    print(f"   • Device: {device.upper()}")
     print(f"   • ADAPTIVE reward scaling:")
     print(f"     - M4.5: 3× multiplier")
     print(f"     - M5.7: 7× multiplier")
