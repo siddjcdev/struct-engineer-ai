@@ -1,15 +1,21 @@
 """
-IMPROVED TMD ENVIRONMENT - ALL FIXES APPLIED
-============================================
+TMD ENVIRONMENT v7 - ADAPTIVE REWARD SCALING
+=============================================
 
-Improvements:
-1. Multi-objective reward function (displacement + velocity + force + acceleration)
-2. Force smoothness regularization
-3. Shorter episode length (matches earthquake duration)
-4. Better state normalization
+v7 IMPROVEMENTS:
+- Magnitude-adaptive reward scaling
+- Automatically adjusts reward signal based on earthquake intensity
+- Prevents gradient instability on extreme earthquakes
+- Optimal scaling per magnitude class
+
+Scaling Strategy:
+- Small earthquakes (M4.5): 3× multiplier (less aggressive)
+- Moderate earthquakes (M5.7): 7× multiplier (strong signal)
+- High earthquakes (M7.4): 4× multiplier (balanced)
+- Extreme earthquakes (M8.4): 3× multiplier (conservative)
 
 Author: Siddharth
-Date: December 2025
+Date: January 2026
 """
 
 import gymnasium as gym
@@ -35,7 +41,8 @@ class ImprovedTMDBuildingEnv(gym.Env):
         actuator_noise_std: float = 0.0,
         latency_steps: int = 0,
         dropout_prob: float = 0.0,
-        obs_bounds: dict = None
+        obs_bounds: dict = None,
+        reward_scale: float = None  # NEW: Adaptive reward scaling (auto-computed if None)
     ):
         super().__init__()
 
@@ -43,6 +50,13 @@ class ImprovedTMDBuildingEnv(gym.Env):
         self.dt = dt
         self.max_force = max_force
         self.earthquake_name = earthquake_name
+
+        # NEW: Compute adaptive reward scaling based on earthquake intensity
+        if reward_scale is None:
+            # Auto-detect magnitude from earthquake name or compute from PGA
+            self.reward_scale = self._compute_adaptive_reward_scale()
+        else:
+            self.reward_scale = reward_scale
 
         # Domain randomization parameters
         self.sensor_noise_std = sensor_noise_std
@@ -149,8 +163,41 @@ class ImprovedTMDBuildingEnv(gym.Env):
 
         # Domain randomization: Action buffer for latency
         self.action_buffer = []
-    
-    
+
+
+    def _compute_adaptive_reward_scale(self) -> float:
+        """
+        Compute adaptive reward scaling based on earthquake characteristics
+
+        Strategy based on v5/v6 results:
+        - M4.5: Use 3× (gentle - avoid over-penalizing small displacements)
+        - M5.7: Use 7× (strong - showed best improvement with strong signal)
+        - M7.4: Use 4× (balanced - 10× caused instability, 5× marginal)
+        - M8.4: Use 3× (conservative - extreme earthquakes need gentler signal)
+
+        Returns reward multiplier
+        """
+        # Compute PGA from earthquake data
+        pga_g = np.max(np.abs(self.earthquake_data)) / 9.81
+
+        # Magnitude-adaptive scaling based on PGA
+        if pga_g < 0.30:  # M4.5 range (PGA ~0.25g)
+            scale = 3.0
+            magnitude = "M4.5"
+        elif pga_g < 0.55:  # M5.7 range (PGA ~0.35g)
+            scale = 7.0
+            magnitude = "M5.7"
+        elif pga_g < 0.85:  # M7.4 range (PGA ~0.75g)
+            scale = 4.0
+            magnitude = "M7.4"
+        else:  # M8.4 range (PGA ~0.9g)
+            scale = 3.0
+            magnitude = "M8.4"
+
+        print(f"   Adaptive reward scale: {scale}× for PGA={pga_g:.3f}g (detected as {magnitude})")
+        return scale
+
+
     def _build_mass_matrix(self) -> np.ndarray:
         M = np.zeros((13, 13))
         for i in range(self.n_floors):
@@ -382,11 +429,11 @@ class ImprovedTMDBuildingEnv(gym.Env):
         # Remove force direction bonus (it was teaching wrong behavior).
         # Let agent discover the right control strategy through displacement minimization.
 
-        # 1. Displacement: VERY STRONG penalty to maximize learning signal (v6)
-        displacement_penalty = -10.0 * abs(roof_disp)  # 10× stronger than original!
+        # 1. Displacement: ADAPTIVE penalty based on earthquake magnitude (v7)
+        displacement_penalty = -self.reward_scale * abs(roof_disp)  # Adaptive scaling!
 
-        # 2. Velocity: VERY STRONG penalty to maximize learning signal (v6)
-        velocity_penalty = -3.0 * abs(roof_vel)  # 10× stronger than original!
+        # 2. Velocity: ADAPTIVE penalty based on earthquake magnitude (v7)
+        velocity_penalty = -(self.reward_scale * 0.3) * abs(roof_vel)  # Adaptive scaling!
 
         # 3. Energy efficiency: Disabled
         force_penalty = 0.0
@@ -409,12 +456,12 @@ class ImprovedTMDBuildingEnv(gym.Env):
         floor_drifts = self._compute_interstory_drifts(self.displacement[:self.n_floors])
         self.peak_drift_per_floor = np.maximum(self.peak_drift_per_floor, floor_drifts)
 
-        # Combined reward - MAXIMUM SIGNAL (v6)
-        # Amplified displacement/velocity penalties 10× for strong learning
+        # Combined reward - ADAPTIVE SIGNAL (v7)
+        # Magnitude-adaptive penalties prevent gradient instability
         # No force direction shaping, let agent discover optimal control
         reward = (
-            displacement_penalty +      # -10.0 * |disp| (10× stronger!)
-            velocity_penalty +          # -3.0 * |vel| (10× stronger!)
+            displacement_penalty +      # -scale * |disp| (adaptive!)
+            velocity_penalty +          # -(scale*0.3) * |vel| (adaptive!)
             force_penalty +             # 0.0
             smoothness_penalty +        # 0.0
             acceleration_penalty +      # 0.0
@@ -638,7 +685,8 @@ def make_improved_tmd_env(
         actuator_noise_std=actuator_noise_std,
         latency_steps=latency_steps,
         dropout_prob=dropout_prob,
-        obs_bounds=obs_bounds
+        obs_bounds=obs_bounds,
+        reward_scale=None  # Auto-compute adaptive scaling
     )
 
 
