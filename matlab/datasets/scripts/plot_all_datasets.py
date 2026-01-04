@@ -27,20 +27,20 @@ def plot_earthquake_datasets():
     # Define magnitude groups
     magnitude_groups = {
         'M4.5 (PGA 0.25g)': {
-            'test': 'PEER_small_M4.5_PGA0.25g.csv',
-            'train': glob.glob('training_set/TRAIN_M4.5*.csv')
+            'test': 'test/PEER_small_M4.5_PGA0.25g.csv',
+            'train': glob.glob('training/training_set_v2/TRAIN_M4.5*.csv')
         },
         'M5.7 (PGA 0.35g)': {
-            'test': 'PEER_moderate_M5.7_PGA0.35g.csv',
-            'train': glob.glob('training_set/TRAIN_M5.7*.csv')
+            'test': 'test/PEER_moderate_M5.7_PGA0.35g.csv',
+            'train': glob.glob('training/training_set_v2/TRAIN_M5.7*.csv')
         },
         'M7.4 (PGA 0.75g)': {
-            'test': 'PEER_high_M7.4_PGA0.75g.csv',
-            'train': glob.glob('training_set/TRAIN_M7.4*.csv')
+            'test': 'test/PEER_high_M7.4_PGA0.75g.csv',
+            'train': glob.glob('training/training_set_v2/TRAIN_M7.4*.csv')
         },
         'M8.4 (PGA 0.9g)': {
-            'test': 'PEER_insane_M8.4_PGA0.9g.csv',
-            'train': glob.glob('training_set/TRAIN_M8.4*.csv')
+            'test': 'test/PEER_insane_M8.4_PGA0.9g.csv',
+            'train': glob.glob('training/training_set_v2/TRAIN_M8.4*.csv')
         }
     }
 
@@ -100,7 +100,7 @@ def plot_earthquake_datasets():
     plt.tight_layout(rect=[0, 0, 1, 0.97])
 
     # Save figure
-    output_file = 'all_datasets_visualization.png'
+    output_file = 'analysis/all_datasets_visualization.png'
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
     print(f"\n✅ Saved visualization to: {output_file}")
     plt.close()
@@ -113,10 +113,10 @@ def plot_zoomed_endings():
 
     # All files
     test_files = [
-        'PEER_small_M4.5_PGA0.25g.csv',
-        'PEER_moderate_M5.7_PGA0.35g.csv',
-        'PEER_high_M7.4_PGA0.75g.csv',
-        'PEER_insane_M8.4_PGA0.9g.csv'
+        'test/PEER_small_M4.5_PGA0.25g.csv',
+        'test/PEER_moderate_M5.7_PGA0.35g.csv',
+        'test/PEER_high_M7.4_PGA0.75g.csv',
+        'test/PEER_insane_M8.4_PGA0.9g.csv'
     ]
 
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
@@ -184,8 +184,8 @@ def plot_comparison_before_after():
     Compare V1 (broken) vs V2 (fixed) for PEER M7.4
     """
 
-    v1_file = 'PEER_high_M7.4_PGA0.75g.csv.v1'
-    v2_file = 'PEER_high_M7.4_PGA0.75g.csv'
+    v1_file = 'archive/PEER_high_M7.4_PGA0.75g.csv.v1'
+    v2_file = 'test/PEER_high_M7.4_PGA0.75g.csv'
 
     if not os.path.exists(v1_file):
         print(f"\n⚠️  V1 backup not found: {v1_file}")
