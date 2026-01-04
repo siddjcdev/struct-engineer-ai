@@ -146,6 +146,10 @@ class ImprovedTMDBuildingEnv(gym.Env):
 
         # Track peak drift per floor for consistent DCR calculation
         self.peak_drift_per_floor = np.zeros(self.n_floors)
+        
+        # NEW: Track ISDR and DCR for step-level access (fixes 0.00 reporting)
+        self.max_isdr_percent = 0.0
+        self.max_dcr = 0.0
 
         # Domain randomization: Action buffer for latency
         self.action_buffer = []
@@ -369,68 +373,100 @@ class ImprovedTMDBuildingEnv(gym.Env):
         obs = obs_noisy
         
         # ================================================================
-        # IMPROVED MULTI-OBJECTIVE REWARD FUNCTION
+        # ENHANCED MULTI-OBJECTIVE REWARD FUNCTION
+        # Focus: Exceptional performance targets (FEMA-compliant)
+        # M4.5: 14cm, M5.7: 22cm, M7.4: 30cm, M8.4: 40cm
+        # All with ISDR < 1.2% and DCR < 1.75
         # ================================================================
 
-        # 1. Primary objective: Minimize displacement
-        displacement_penalty = -1.0 * abs(roof_disp)
+        # 1. PRIMARY OBJECTIVE: Aggressively minimize displacement
+        #    Targets: M4.5: 14cm, M5.7: 22cm, M7.4: 30cm, M8.4: 40cm
+        #    Weight reduced from -5.0 to -3.0 to allow value learning
+        displacement_penalty = -3.0 * abs(roof_disp)
 
-        # 2. Dampen oscillations: Penalize velocity
-        velocity_penalty = -0.3 * abs(roof_vel)
+        # 2. SECONDARY: Dampen oscillations - Penalize velocity
+        velocity_penalty = -0.5 * abs(roof_vel)
 
-        # 3. Energy efficiency: Penalize large forces
-        force_normalized = control_force / self.max_force
-        #force_penalty = -0.01 * (force_normalized ** 2)
-        #IMPROVEMENT: No force penalty
-        force_penalty = 0.0  # Don't penalize force usage at all
+        # 3. No force penalty - Use available authority
+        force_penalty = 0.0
 
-        # 4. Smoothness: Penalize rapid force changes
+        # 4. Smoothness: Penalize rapid force changes (prevents actuator saturation)
         force_change = abs(control_force - self.previous_force)
-        smoothness_penalty = -0.005 * (force_change / self.max_force)
+        smoothness_penalty = -0.01 * (force_change / self.max_force)
 
-        # 5. Comfort: Penalize high accelerations
-        acceleration_penalty = -0.1 * abs(self.roof_acceleration)
+        # 5. Acceleration penalty for comfort
+        acceleration_penalty = -0.15 * abs(self.roof_acceleration)
 
-        # 6. Drift Concentration Ratio (DCR) - MODERATE PENALTY (Ablation Study)
-        # Track peak drift for each floor over time, then calculate DCR
-        # This matches the episode-level DCR metric exactly
+        # 6. INTERSTORY DRIFT RATIO (ISDR) - NEW EXPLICIT PENALTY
+        #    Targets: M4.5: 0.4%, M5.7: 0.6%, M7.4: 0.85%, M8.4: 1.2%
+        #    ISDR = max(interstory drift) / story height (3.6m typical)
+        #    Example: max drift = 4.3cm → ISDR = 0.043 / 3.6 = 1.2%
         floor_drifts = self._compute_interstory_drifts(self.displacement[:self.n_floors])
+        max_drift_current = np.max(floor_drifts) if len(floor_drifts) > 0 else 0.0
+        story_height = 3.6  # meters (typical 12-story building)
+        
+        # ISDR as percentage: 0.004 = 0.4%, 0.012 = 1.2%
+        current_isdr = max_drift_current / story_height
+        
+        # Penalize ISDR above target thresholds
+        # Use a soft penalty that increases quadratically above threshold
+        isdr_threshold = 0.012  # 1.2% - maximum allowed ISDR
+        if current_isdr > isdr_threshold:
+            isdr_excess = current_isdr - isdr_threshold
+            isdr_penalty = -5.0 * (isdr_excess ** 2)  # Aggressive quadratic penalty above 1.2%
+        else:
+            isdr_penalty = 0.0  # Reward compliance
+
+        # 7. Drift Concentration Ratio (DCR) - AGGRESSIVE PENALTY
+        #    Target: DCR < 1.75 (FEMA-compliant)
+        #    Penalize concentrations of drift on weak floors
         self.peak_drift_per_floor = np.maximum(self.peak_drift_per_floor, floor_drifts)
 
-        # Calculate DCR from peak drifts (same formula as get_episode_metrics)
-        # FIX #2: Higher threshold to prevent DCR explosion early in episode
+        current_dcr = 0.0
         if np.max(self.peak_drift_per_floor) > 1e-10:
             sorted_peaks = np.sort(self.peak_drift_per_floor)
             percentile_75 = np.percentile(sorted_peaks, 75)
             max_peak = np.max(self.peak_drift_per_floor)
 
-            # CRITICAL FIX: Only calculate DCR after sufficient drift has occurred (1mm minimum)
-            # Old threshold (1e-10 = 0.00001mm) caused DCR=7,000+ early in episode
-            # This led to penalties of -105 million that destroyed the reward signal
-            # New threshold (0.001 = 1mm) ensures DCR is only calculated when meaningful
-            if percentile_75 > 0.001:  # 1mm minimum drift (was 1e-10)
+            if percentile_75 > 0.001:  # 1mm minimum drift
                 current_dcr = max_peak / percentile_75
-                # Penalize DCR deviation from ideal (1.0 = perfectly uniform)
-                # DCR=1.0 → 0, DCR=2.0 → -2.0, DCR=3.0 → -8.0
-                dcr_deviation = max(0, current_dcr - 1.0)
-                dcr_penalty = -2.0 * (dcr_deviation ** 2)  # Moderate penalty
+                # Aggressive penalty above 1.75
+                dcr_threshold = 1.75
+                if current_dcr > dcr_threshold:
+                    dcr_excess = current_dcr - dcr_threshold
+                    dcr_penalty = -5.0 * (dcr_excess ** 2)  # Aggressive quadratic
+                else:
+                    dcr_penalty = 0.0  # Reward compliance
             else:
-                dcr_penalty = 0.0  # Don't penalize DCR early in episode
+                dcr_penalty = 0.0
         else:
             dcr_penalty = 0.0
+        
+        # 8. FORCE UTILIZATION BONUS - NEW
+        #    Penalize NOT using available force (underutilization causes excessive displacement)
+        #    If using <30% of available force, penalize it moderately
+        force_utilization = abs(control_force) / self.max_force
+        if force_utilization < 0.3:
+            underutilization_penalty = -0.3 * (0.3 - force_utilization)  # Reduced from -1.0 - was overwhelming other rewards
+        else:
+            underutilization_penalty = 0.0  # No penalty if using 30%+ of available force
+        
+        # Update instance variables for external access (fixes 0.00 reporting)
+        self.max_isdr_percent = current_isdr * 100  # As percentage
+        self.max_dcr = current_dcr
 
-        # Combined reward (Option 2 only: expanded observations + moderate DCR penalty)
-        # NO max drift penalty - we want to isolate the effect of expanded observations
+        # Combined reward: Displacement + Velocity + Smoothness + Acceleration + ISDR + DCR + Force Utilization
+        # Key: Aggressive displacement weight + explicit ISDR/DCR penalties + force utilization bonus
         reward = (
             displacement_penalty +
             velocity_penalty +
             force_penalty +
             smoothness_penalty +
             acceleration_penalty +
-            dcr_penalty  # Moderate DCR penalty only
+            isdr_penalty +              # Explicit ISDR penalty (above 1.2%)
+            dcr_penalty +               # Aggressive penalty (above 1.75)
+            underutilization_penalty    # NEW: Penalize not using available force
         )
-        #IMPROVEMENT: Simplified reward to just displacement
-        #reward = -abs(roof_disp)
 
         # Update previous force for next step
         self.previous_force = control_force
@@ -442,6 +478,10 @@ class ImprovedTMDBuildingEnv(gym.Env):
         # NEW: Track metrics for final reporting
         self.displacement_history.append(roof_disp)
         self.force_history.append(control_force)
+        
+        # DEBUG: Print ISDR/DCR every 50 steps if they're significant
+        if self.current_step % 50 == 0 and (current_isdr > 0.003 or current_dcr > 0.5):
+            print(f"[ENV DEBUG] Step {self.current_step}: ISDR={current_isdr*100:.3f}%, DCR={current_dcr:.3f}, ForceUtil={force_utilization*100:.1f}%, Force={control_force/1000:.1f}kN, Disp={roof_disp*100:.2f}cm")
 
         # Compute interstory drifts for all floors
         drifts = self._compute_interstory_drifts(self.displacement[:self.n_floors])
@@ -461,13 +501,16 @@ class ImprovedTMDBuildingEnv(gym.Env):
             'control_force': control_force,
             'peak_displacement': self.peak_displacement,
             'cumulative_displacement': self.cumulative_displacement,
+            'current_isdr': current_isdr,        # NEW: Current ISDR metric
+            'current_isdr_percent': current_isdr * 100,  # NEW: As percentage
             'reward_breakdown': {
                 'displacement': displacement_penalty,
                 'velocity': velocity_penalty,
                 'force': force_penalty,
                 'smoothness': smoothness_penalty,
                 'acceleration': acceleration_penalty,
-                'dcr': dcr_penalty  # Moderate penalty (2.0x weight)
+                'isdr': isdr_penalty,              # NEW: ISDR penalty
+                'dcr': dcr_penalty
             }
         }
         
@@ -499,13 +542,14 @@ class ImprovedTMDBuildingEnv(gym.Env):
 
     def get_episode_metrics(self) -> dict:
         """
-        Calculate and return all episode metrics
+        Calculate and return all episode metrics including ISDR
 
         Returns:
             dict with:
                 - rms_roof_displacement: RMS of roof displacement (m)
                 - peak_roof_displacement: Peak roof displacement (m)
-                - max_drift: Maximum interstory drift across all floors and timesteps (m)
+                - max_isdr: Maximum Interstory Drift Ratio (as decimal, e.g. 0.006 = 0.6%)
+                - max_isdr_percent: Maximum ISDR as percentage (e.g. 0.6)
                 - DCR: Drift Concentration Ratio (dimensionless)
                 - peak_force: Peak control force (N)
                 - mean_force: Mean absolute control force (N)
@@ -514,6 +558,8 @@ class ImprovedTMDBuildingEnv(gym.Env):
             return {
                 'rms_roof_displacement': 0.0,
                 'peak_roof_displacement': 0.0,
+                'max_isdr': 0.0,
+                'max_isdr_percent': 0.0,
                 'max_drift': 0.0,
                 'DCR': 0.0,
                 'peak_force': 0.0,
@@ -534,7 +580,14 @@ class ImprovedTMDBuildingEnv(gym.Env):
         drift_array = np.array(self.drift_history)  # Shape: (timesteps, n_floors)
         max_drift = np.max(drift_array)
 
-        # 4. DCR (Drift Concentration Ratio)
+        # 4. Maximum Interstory Drift Ratio (ISDR)
+        #    ISDR = max(interstory drift) / story height (3.6m)
+        #    Example: max drift 4.3cm → ISDR = 0.043 / 3.6 = 0.0119 = 1.19%
+        story_height = 3.6  # meters
+        max_isdr = max_drift / story_height  # As decimal (0.006 = 0.6%)
+        max_isdr_percent = max_isdr * 100  # As percentage (0.6%)
+
+        # 5. DCR (Drift Concentration Ratio)
         # For each floor, get its max drift over time
         max_drift_per_floor = np.max(np.abs(drift_array), axis=0)  # Shape: (n_floors,)
 
@@ -550,13 +603,15 @@ class ImprovedTMDBuildingEnv(gym.Env):
         else:
             DCR = 0.0
 
-        # 5. Peak and mean force
+        # 6. Peak and mean force
         peak_force = np.max(np.abs(forces))
         mean_force = np.mean(np.abs(forces))
 
         return {
             'rms_roof_displacement': float(rms_roof),
             'peak_roof_displacement': float(peak_roof),
+            'max_isdr': float(max_isdr),                    # NEW: As decimal
+            'max_isdr_percent': float(max_isdr_percent),   # NEW: As percentage
             'max_drift': float(max_drift),
             'DCR': float(DCR),
             'peak_force': float(peak_force),
@@ -601,7 +656,7 @@ def make_improved_tmd_env(
 
     print(f"Loading earthquake data from {earthquake_file}...")
     data = np.loadtxt(earthquake_file, delimiter=',', skiprows=1)
-    print(f"✅ Earthquake data loaded: {data.shape[0]} samples")
+    print(f"Earthquake data loaded: {data.shape[0]} samples")
 
     if data.shape[1] >= 2:
         times = data[:, 0]
@@ -617,7 +672,7 @@ def make_improved_tmd_env(
 
     # Display domain randomization settings
     if sensor_noise_std > 0 or actuator_noise_std > 0 or latency_steps > 0 or dropout_prob > 0:
-        print(f"✓ Domain randomization enabled:")
+        print(f"Domain randomization enabled:")
         if sensor_noise_std > 0:
             print(f"   - Sensor noise: {sensor_noise_std*100:.1f}%")
         if actuator_noise_std > 0:
