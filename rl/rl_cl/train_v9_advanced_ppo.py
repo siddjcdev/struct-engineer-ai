@@ -25,17 +25,54 @@ import numpy as np
 import os
 import glob
 import random
+import argparse
 from datetime import datetime
 import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.callbacks import BaseCallback
 from tmd_environment_adaptive_reward import make_improved_tmd_env
 from ppo_config_v9_advanced import (
     V9AdvancedConfig,
     V9PPOHyperparameters,
     V9CurriculumStages
 )
+
+
+class TensorboardCallback(BaseCallback):
+    """
+    Custom callback for logging additional metrics to TensorBoard
+
+    Logs:
+    - Stage information
+    - Learning rate (current value from schedule)
+    - Entropy coefficient
+    - Episode metrics (peak displacement, DCR, etc.)
+    """
+
+    def __init__(self, stage_num, stage_name, verbose=0):
+        super().__init__(verbose)
+        self.stage_num = stage_num
+        self.stage_name = stage_name
+
+    def _on_step(self) -> bool:
+        """Called at every step"""
+        return True
+
+    def _on_rollout_end(self) -> None:
+        """Called at the end of each rollout (after collecting n_steps)"""
+        # Log current learning rate (handle both callable and fixed)
+        if callable(self.model.learning_rate):
+            # For schedules, evaluate at current progress
+            progress = 1.0 - (self.num_timesteps / self.model._total_timesteps)
+            current_lr = self.model.learning_rate(progress)
+        else:
+            current_lr = self.model.learning_rate
+
+        self.logger.record("train/learning_rate", current_lr)
+        self.logger.record("train/entropy_coef", self.model.ent_coef)
+        self.logger.record("stage/stage_number", self.stage_num)
 
 
 def make_env_factory(train_files, force_limit):
@@ -85,7 +122,7 @@ def get_entropy_coefficient(stage):
         return stage['ent_coef']
 
 
-def create_v9_ppo_model(env, stage, device):
+def create_v9_ppo_model(env, stage, device, tensorboard_log=None):
     """
     Create PPO model with v9 advanced configuration
 
@@ -93,6 +130,7 @@ def create_v9_ppo_model(env, stage, device):
         env: Training environment
         stage: Stage configuration dict
         device: 'cuda' or 'cpu'
+        tensorboard_log: Path to TensorBoard log directory (optional)
 
     Returns:
         PPO model instance
@@ -140,6 +178,7 @@ def create_v9_ppo_model(env, stage, device):
         max_grad_norm=V9PPOHyperparameters.MAX_GRAD_NORM,
         policy_kwargs=policy_kwargs,
         verbose=V9PPOHyperparameters.VERBOSE,
+        tensorboard_log=tensorboard_log,  # Enable TensorBoard logging
         device=device
     )
 
@@ -241,8 +280,62 @@ def test_on_earthquake(model, test_file, force_limit):
     return peak * 100  # Convert to cm
 
 
-def train_v9_advanced():
-    """Main training function with v9 advanced configuration"""
+def parse_args():
+    """
+    Parse command-line arguments for training configuration
+
+    Returns:
+        Namespace with model_dir and log_dir
+    """
+    parser = argparse.ArgumentParser(
+        description='Train v9 Advanced PPO for earthquake control',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+
+    parser.add_argument(
+        '--model-dir',
+        type=str,
+        default='models/rl_v9_advanced',
+        help='Directory to save model checkpoints'
+    )
+
+    parser.add_argument(
+        '--log-dir',
+        type=str,
+        default='logs/rl_v9_advanced',
+        help='Directory for TensorBoard logs'
+    )
+
+    parser.add_argument(
+        '--run-name',
+        type=str,
+        default=None,
+        help='Run name for organizing experiments (creates subdirectories)'
+    )
+
+    return parser.parse_args()
+
+
+def train_v9_advanced(model_dir=None, log_dir=None, run_name=None):
+    """
+    Main training function with v9 advanced configuration
+
+    Args:
+        model_dir: Directory to save model checkpoints (default: models/rl_v9_advanced)
+        log_dir: Directory for TensorBoard logs (default: logs/rl_v9_advanced)
+        run_name: Optional run name for organizing experiments
+    """
+
+    # Set default directories if not provided
+    if model_dir is None:
+        model_dir = 'models/rl_v9_advanced'
+    if log_dir is None:
+        log_dir = 'logs/rl_v9_advanced'
+
+    # Add run_name as subdirectory if provided
+    if run_name is not None:
+        model_dir = os.path.join(model_dir, run_name)
+        log_dir = os.path.join(log_dir, run_name)
 
     # Auto-detect device
     gpu_name = None
@@ -260,6 +353,10 @@ def train_v9_advanced():
         print("  V9 ADVANCED PPO TRAINING")
         print("="*70)
         print("\n⚠️  No GPU detected - using CPU\n")
+
+    # Print configuration
+    if run_name:
+        print(f"🏷️  Run name: {run_name}\n")
 
     # Print improvements summary
     V9AdvancedConfig.print_improvements_summary()
@@ -292,9 +389,18 @@ def train_v9_advanced():
 
     print()
 
-    # Create output directory
-    output_dir = "models/rl_v9_advanced"
+    # Create output directory for model checkpoints
+    output_dir = model_dir
     os.makedirs(output_dir, exist_ok=True)
+
+    # Create TensorBoard log directory
+    tensorboard_log = log_dir
+    os.makedirs(tensorboard_log, exist_ok=True)
+
+    print(f"📁 Output configuration:")
+    print(f"   Model directory: {output_dir}")
+    print(f"   Log directory: {tensorboard_log}")
+    print(f"   To view: tensorboard --logdir={log_dir.split('/')[0]}\n")
 
     # Check for existing checkpoints
     n_envs = V9PPOHyperparameters.N_ENVS
@@ -349,7 +455,7 @@ def train_v9_advanced():
             # Starting fresh (no checkpoint)
             print(f"🤖 Creating v9 Advanced PPO model...")
             print(f"   Device: {device}\n")
-            model = create_v9_ppo_model(env, stage, device)
+            model = create_v9_ppo_model(env, stage, device, tensorboard_log)
         elif stage_idx == start_stage_idx and start_stage_idx > 0:
             # Resuming from checkpoint - need to update for new stage
             print(f"🔄 Resuming training from checkpoint...\n")
@@ -359,13 +465,21 @@ def train_v9_advanced():
             print(f"🔄 Continuing from Stage {stage_num-1}...\n")
             update_model_for_new_stage(model, env, stage)
 
+        # Create TensorBoard callback for this stage
+        tb_callback = TensorboardCallback(
+            stage_num=stage_num,
+            stage_name=stage['name']
+        )
+
         # Train with error handling
         try:
             print(f"🚀 Training Stage {stage_num}...")
             model.learn(
                 total_timesteps=timesteps,
                 reset_num_timesteps=False,
-                progress_bar=True
+                progress_bar=True,
+                callback=tb_callback,  # Add TensorBoard callback
+                tb_log_name=f"v9_advanced_stage{stage_num}"  # Unique name per stage
             )
 
             # Save checkpoint after successful training
@@ -442,7 +556,11 @@ def train_v9_advanced():
     print(f"   • Entropy coefficient averaging")
     print(f"   • Tighter value clipping: 0.15")
     print(f"   • Automatic checkpoint recovery")
+    print(f"   • TensorBoard logging enabled")
     print(f"   • Total timesteps: {V9CurriculumStages.get_total_timesteps():,}")
+
+    print(f"\n📊 View training metrics:")
+    print(f"   tensorboard --logdir={tensorboard_log}")
 
     # Final evaluation
     print(f"\n{'='*70}")
@@ -494,9 +612,17 @@ def train_v9_advanced():
 
 
 if __name__ == "__main__":
+    # Parse command-line arguments
+    args = parse_args()
+
     print("\n🚀 Starting v9 Advanced PPO Training...\n")
 
-    model = train_v9_advanced()
+    # Train with specified directories
+    model = train_v9_advanced(
+        model_dir=args.model_dir,
+        log_dir=args.log_dir,
+        run_name=args.run_name
+    )
 
     if model is not None:
         print("✅ v9 Advanced training complete!")
@@ -506,6 +632,8 @@ if __name__ == "__main__":
         print("  ✓ Cosine LR annealing")
         print("  ✓ Deeper network architecture")
         print("  ✓ Refined value function clipping")
+        print("  ✓ TensorBoard logging")
+        print("  ✓ Automatic checkpoint recovery")
         print("\nExpected benefits:")
         print("  • Reduced variance in advantage estimates")
         print("  • Smoother convergence")
