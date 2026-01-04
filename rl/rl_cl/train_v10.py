@@ -323,9 +323,9 @@ def train_v10():
             'n_epochs': 15,
             'lr_init': 3e-4,
             'lr_min': 1e-4,  # Increased from 1e-5 - prevent learning from dying
-            'ent_coef_init': 0.05,  # Increased from 0.02 - prevent determinism
+            'ent_coef_init': 0.08,  # Increased from 0.05 - prevent entropy collapse
             'ent_coef_min': 0.0005,
-            'clip_range': 0.15,
+            'clip_range': 0.10,  # Reduced from 0.15 - fewer clipped updates, stable gradients
             'clip_range_vf': 0.1,
             'reward_scale': 6.0,  # Reduced from 10.0 - reduce value network instability
         },
@@ -339,9 +339,9 @@ def train_v10():
             'n_epochs': 15,
             'lr_init': 2.5e-4,
             'lr_min': 1e-4,  # Increased from 1e-5 - prevent learning from dying
-            'ent_coef_init': 0.05,  # Increased from 0.015 - prevent determinism
+            'ent_coef_init': 0.08,  # Increased from 0.05 - prevent entropy collapse
             'ent_coef_min': 0.0005,
-            'clip_range': 0.15,
+            'clip_range': 0.10,  # Reduced from 0.15 - fewer clipped updates, stable gradients
             'clip_range_vf': 0.1,
             'reward_scale': 7.0,  # Reduced from 12.0 - reduce value network instability
         },
@@ -355,9 +355,9 @@ def train_v10():
             'n_epochs': 25,
             'lr_init': 2e-4,
             'lr_min': 1e-4,  # Increased from 5e-6 - prevent learning from dying
-            'ent_coef_init': 0.05,  # Increased from 0.01 - prevent determinism
+            'ent_coef_init': 0.08,  # Increased from 0.05 - prevent entropy collapse
             'ent_coef_min': 0.0005,
-            'clip_range': 0.12,
+            'clip_range': 0.10,  # Reduced from 0.12 - fewer clipped updates, stable gradients
             'clip_range_vf': 0.08,
             'reward_scale': 8.0,  # Reduced from 14.0 - reduce value network instability
         },
@@ -371,9 +371,9 @@ def train_v10():
             'n_epochs': 30,
             'lr_init': 1.5e-4,
             'lr_min': 1e-4,  # Increased from 5e-6 - prevent learning from dying
-            'ent_coef_init': 0.05,  # Increased from 0.01 - prevent determinism
+            'ent_coef_init': 0.08,  # Increased from 0.05 - prevent entropy collapse
             'ent_coef_min': 0.0005,
-            'clip_range': 0.12,
+            'clip_range': 0.10,  # Reduced from 0.12 - fewer clipped updates, stable gradients
             'clip_range_vf': 0.08,
             'reward_scale': 9.0,  # Reduced from 16.0 - reduce value network instability
         },

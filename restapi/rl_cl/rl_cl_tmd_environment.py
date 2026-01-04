@@ -413,7 +413,7 @@ class ImprovedTMDBuildingEnv(gym.Env):
         isdr_threshold = 0.012  # 1.2% - maximum allowed ISDR
         if current_isdr > isdr_threshold:
             isdr_excess = current_isdr - isdr_threshold
-            isdr_penalty = -5.0 * (isdr_excess ** 2)  # Aggressive quadratic penalty above 1.2%
+            isdr_penalty = -10.0 * (isdr_excess ** 2)  # CRITICAL: Increased from -5.0 to -10.0 - ISDR is priority # -5.0 * (isdr_excess ** 2)=> aggressive quadratic penality above 1.2%
         else:
             isdr_penalty = 0.0  # Reward compliance
 
