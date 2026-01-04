@@ -53,23 +53,25 @@ class RLCLController:
         self.model_type = model_type
         self.max_force = 150000.0  # 150 kN
 
-        # SAFETY: Observation bounds (MUST match training environment)
-        # UPDATED: 8-value observation space [roof, floor8, floor6, TMD]
-        # CRITICAL: These MUST match train_final_robust_rl_cl.py obs_bounds
-        # Updated to match new training (±5.0m disp, ±20.0m/s vel, ±15.0m TMD)
+        # CRITICAL FIX: Use proper observation bounds for 8-value expanded state space
+        # Old bounds (±1.2m disp, ±3m/s vel) were too small and caused extreme clipping
+        # Training uses: ±5.0m disp, ±20.0m/s vel for floors (roof, floor8, floor6), ±15.0m/±60m/s for TMD
+        # This matches the rl_cl_tmd_environment.py defaults with obs_bounds = {'disp': 5.0, 'vel': 20.0, 'tmd_disp': 15.0, 'tmd_vel': 60.0}
         self.obs_bounds_array = np.array([
-            [-5.0, -20.0, -5.0, -20.0, -5.0, -20.0, -15.0, -60.0],  # CHANGED: was -1.2, -3.0, -1.2, -3.0, -1.2, -3.0, -1.5, -3.5
-            [5.0, 20.0, 5.0, 20.0, 5.0, 20.0, 15.0, 60.0]           # CHANGED: was 1.2, 3.0, 1.2, 3.0, 1.2, 3.0, 1.5, 3.5
+            [-5.0, -20.0, -5.0, -20.0, -5.0, -20.0, -15.0, -60.0],  # 8-value lower bounds
+            [5.0, 20.0, 5.0, 20.0, 5.0, 20.0, 15.0, 60.0]           # 8-value upper bounds
         ], dtype=np.float32)
 
-        # Legacy 4-value bounds (kept for backward compatibility with predict_single/batch)
+        # Legacy 4-value bounds - ALSO FIXED for backward compatibility
+        # Was (±0.5m, ±2m/s) causing catastrophic clipping on extreme earthquakes
         self.obs_bounds = {
-            'roof_disp': (-0.5, 0.5),      # ±50 cm (legacy)
-            'roof_vel': (-2.0, 2.0),       # ±2.0 m/s (legacy)
-            'tmd_disp': (-0.6, 0.6),       # ±60 cm (legacy)
-            'tmd_vel': (-2.5, 2.5)         # ±2.5 m/s (legacy)
+            'roof_disp': (-5.0, 5.0),      # ±5.0 m (matches training)
+            'roof_vel': (-20.0, 20.0),     # ±20.0 m/s (matches training)
+            'tmd_disp': (-15.0, 15.0),     # ±15.0 m (matches training)
+            'tmd_vel': (-60.0, 60.0)       # ±60.0 m/s (matches training)
         }
-        self.clip_warnings = 0  # Track how many times we clip observations
+        self.clip_warnings = 0
+        self._last_force = 0.0  # For force rate limiting under latency
 
         print(f"✅ RLCLController: RL CL model loaded successfully!")
         print(f"   RLCLController:     Model type: {model_type}")
@@ -82,7 +84,7 @@ class RLCLController:
         print(f"   RLCLController:     • Bounds: ±5.0m disp, ±20.0m/s vel (floors), ±15.0m TMD disp, ±60.0m/s TMD vel")
     
     def predict_single(self, roof_disp, roof_vel, tmd_disp, tmd_vel):
-        """Single prediction with safety clipping"""
+        """Single prediction with safety clipping AND rate limiting"""
         # SAFETY: Clip observations to training bounds
         roof_disp_clip = np.clip(roof_disp, *self.obs_bounds['roof_disp'])
         roof_vel_clip = np.clip(roof_vel, *self.obs_bounds['roof_vel'])
@@ -93,19 +95,26 @@ class RLCLController:
             tmd_disp_clip != tmd_disp or tmd_vel_clip != tmd_vel):
             self.clip_warnings += 1
             if self.clip_warnings <= 5:  # Only print first 5 warnings
-                print(f"⚠️  RL-CL SAFETY: Observation out of bounds, clipping to training range")
-                print(f"    Original: roof_d={roof_disp:.3f}, roof_v={roof_vel:.3f}, "
-                      f"tmd_d={tmd_disp:.3f}, tmd_v={tmd_vel:.3f}")
-                print(f"    Clipped:  roof_d={roof_disp_clip:.3f}, roof_v={roof_vel_clip:.3f}, "
-                      f"tmd_d={tmd_disp_clip:.3f}, tmd_v={tmd_vel_clip:.3f}")
+                print(f"⚠️  RL-CL SAFETY: Observation out of bounds (extreme earthquake)")
+                print(f"    Original: roof_d={roof_disp:.3f}m, roof_v={roof_vel:.3f}m/s")
+                print(f"    Clipped:  roof_d={roof_disp_clip:.3f}m, roof_v={roof_vel_clip:.3f}m/s")
 
         obs = np.array([roof_disp_clip, roof_vel_clip, tmd_disp_clip, tmd_vel_clip], dtype=np.float32)
         action, _ = self.model.predict(obs, deterministic=True)
         force = float(action[0]) * self.max_force
-        return np.clip(force, -self.max_force, self.max_force)
+        force = np.clip(force, -self.max_force, self.max_force)
+        
+        # CRITICAL: Apply force rate limiting for latency robustness
+        max_rate = 50000.0  # Max change per timestep (N)
+        delta = force - self._last_force
+        if abs(delta) > max_rate:
+            force = self._last_force + np.sign(delta) * max_rate
+        
+        self._last_force = force
+        return force
     
     def predict_batch(self, roof_disp_list, roof_vel_list, tmd_disp_list, tmd_vel_list):
-        """Batch prediction with safety clipping"""
+        """Batch prediction with safety clipping and rate limiting"""
         n = len(roof_disp_list)
         forces = np.zeros(n)
 
@@ -124,9 +133,19 @@ class RLCLController:
             ], dtype=np.float32)
 
             action, _ = self.model.predict(obs, deterministic=True)
-            forces[i] = float(action[0]) * self.max_force
+            force = float(action[0]) * self.max_force
+            force = np.clip(force, -self.max_force, self.max_force)
+            
+            # CRITICAL: Force rate limiting for latency robustness
+            max_rate = 50000.0
+            delta = force - self._last_force
+            if abs(delta) > max_rate:
+                force = self._last_force + np.sign(delta) * max_rate
+            
+            self._last_force = force
+            forces[i] = force
 
-        return np.clip(forces, -self.max_force, self.max_force)
+        return forces
 
     def simulate_episode(self, earthquake_data, dt=0.02):
         """

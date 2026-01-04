@@ -265,3 +265,6 @@ matlab/datasets/training_set/TRAIN_*.v1
 restapi/models/
 rl/rl_cl/models_*/
 rl/rl_cl/logs_*/
+
+rl/rl_cl/logs/
+rl/rl_cl/model_*
