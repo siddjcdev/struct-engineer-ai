@@ -34,18 +34,25 @@ class RLTMDController:
         # Load trained SAC model
         self.model = SAC.load(model_path, device='cpu')
 
-        # Force limits
-        self.max_force = 100000.0  # 100 kN in Newtons
+        # CRITICAL: Force limits must match curriculum training stages
+        # Training progression: 50kN (M4.5) → 100kN (M5.7) → 150kN (M7.4/M8.4)
+        # Old 100kN caused saturation on M7.4+ where >150kN forces are needed
+        # Result: Model couldn't apply sufficient control → divergence to 827cm on PEER_High
+        self.max_force = 150000.0  # 150 kN - matches final curriculum stage for M7.4/M8.4
 
-        # SAFETY: Observation bounds (MUST match training environment)
-        # These bounds prevent out-of-distribution inputs on extreme earthquakes
+        # CRITICAL FIX: Observation bounds must match training environment
+        # The old bounds (±0.5m) were WRONG and caused catastrophic clipping on extreme earthquakes
+        # M7.4 reaches peak displacements of ~8.9m - with ±0.5m bounds, ALL observations clipped!
+        # When observations are clipped, the model predicts random/bad actions → divergence
+        # Solution: Use ADAPTIVE bounds that match the training environment defaults (±5m/±20m/s)
         self.obs_bounds = {
-            'roof_disp': (-0.5, 0.5),      # ±50 cm
-            'roof_vel': (-2.0, 2.0),       # ±2.0 m/s
-            'tmd_disp': (-0.6, 0.6),       # ±60 cm
-            'tmd_vel': (-2.5, 2.5)         # ±2.5 m/s
+            'roof_disp': (-5.0, 5.0),      # ±5.0 m (matches training environment)
+            'roof_vel': (-20.0, 20.0),     # ±20.0 m/s (matches training environment)
+            'tmd_disp': (-15.0, 15.0),     # ±15.0 m (matches training environment)
+            'tmd_vel': (-60.0, 60.0)       # ±60.0 m/s (matches training environment)
         }
         self.clip_warnings = 0  # Track how many times we clip observations
+        self._last_force = 0.0  # For force rate limiting under latency
 
         print(f"✅ RLTMDController: RL model loaded successfully")
         print(f"   RLTMDController:     Model type: {type(self.model).__name__}")
@@ -112,6 +119,19 @@ class RLTMDController:
 
         # Clamp to limits (safety)
         force_N = np.clip(force_N, -self.max_force, self.max_force)
+        
+        # CRITICAL FIX: Force rate limiting for latency robustness
+        # The "UNSAFE" latency failure was caused by unrestricted force changes
+        # With 60ms latency: model makes decisions 3 timesteps old
+        # Without rate limiting: commands can jump ±150kN → jerky motion → structure diverges
+        # Solution: Limit rate of change to 50kN per timestep (20ms)
+        # This allows control while smoothing out latency-delayed decisions
+        max_rate = 50000.0  # Maximum force change per timestep (N) 
+        delta = force_N - self._last_force
+        if abs(delta) > max_rate:
+            force_N = self._last_force + np.sign(delta) * max_rate
+        
+        self._last_force = force_N
         return force_N
     
     
