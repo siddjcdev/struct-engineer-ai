@@ -366,70 +366,66 @@ def train_v10():
         {
             'stage': 1,
             'magnitude': 'M4.5',
-            'force_limit': 110000,  # Increased from 100kN - give more control authority
-            'timesteps': 180000,
-            'n_steps': 1024,
-            'batch_size': 32,
-            'n_epochs': 15,
+            'force_limit': 500000,  # 500 kN - INCREASED for pure active control (was 110 kN with passive TMD)
+            'timesteps': 200000,    # Increased from 180k - need more samples with new reward
+            'n_steps': 2048,        # Increased from 1024 - larger rollout buffer
+            'batch_size': 64,       # Increased from 32 - better gradient estimates
+            'n_epochs': 10,         # Reduced from 15 - prevent overfitting on same data
             'lr_init': 3e-4,
-            'lr_min': 1e-4,  # Increased from 1e-5 - prevent learning from dying
-            'ent_coef_init': 0.08,  # Increased from 0.05 - prevent entropy collapse
-            'ent_coef_min': 0.0005,
-            'clip_range': 0.10,  # Reduced from 0.15 - fewer clipped updates, stable gradients
-            'clip_range_vf': 0.1,
-            'reward_scale': 6.0,  # Reduced from 10.0 - reduce value network instability
+            'lr_min': 5e-5,         # Reduced from 1e-4 - allow slower final convergence
+            'ent_coef_init': 0.05,  # FIXED: Reduced from 0.12 - was too high, causing exploration noise
+            'ent_coef_min': 0.001,
+            'clip_range': 0.2,      # FIXED: Increased from 0.10 - standard PPO value, less restrictive
+            'clip_range_vf': None,  # FIXED: Disabled value clipping - let value network learn freely
         },
         {
             'stage': 2,
             'magnitude': 'M5.7',
-            'force_limit': 170000,  # CRITICAL: Increased from 150kN - avoid force saturation
-            'timesteps': 180000,
+            'force_limit': 700000,  # 700 kN - INCREASED for pure active control
+            'timesteps': 200000,
             'n_steps': 2048,
             'batch_size': 64,
-            'n_epochs': 15,
+            'n_epochs': 10,
             'lr_init': 2.5e-4,
-            'lr_min': 1e-4,  # Increased from 1e-5 - prevent learning from dying
-            'ent_coef_init': 0.06,  # Reduced from 0.08 - stage 2 is harder, needs less entropy
-            'ent_coef_min': 0.0005,
-            'clip_range': 0.12,  # Increased from 0.10 - allow bigger updates when struggling
-            'clip_range_vf': 0.1,
-            'reward_scale': 7.0,  # Reduced from 12.0 - reduce value network instability
+            'lr_min': 5e-5,
+            'ent_coef_init': 0.04,  # Slightly lower for later stages
+            'ent_coef_min': 0.001,
+            'clip_range': 0.2,
+            'clip_range_vf': None,
         },
         {
             'stage': 3,
             'magnitude': 'M7.4',
-            'force_limit': 180000,  # CRITICAL: Increased from 150kN - prevent catastrophic failure
-            'timesteps': 280000,
-            'n_steps': 4096,
-            'batch_size': 128,
-            'n_epochs': 25,
+            'force_limit': 900000,  # 900 kN - INCREASED for pure active control
+            'timesteps': 250000,
+            'n_steps': 2048,
+            'batch_size': 64,
+            'n_epochs': 10,
             'lr_init': 2e-4,
-            'lr_min': 1e-4,  # Increased from 5e-6 - prevent learning from dying
-            'ent_coef_init': 0.08,  # Increased from 0.05 - prevent entropy collapse, from 0.01 to 0.05 to prevent determinstic
-            'ent_coef_min': 0.0005,
-            'clip_range': 0.12,  # Increased from 0.10 - allow bigger updates
-            'clip_range_vf': 0.08,
-            'reward_scale': 8.0,  # Reduced from 14.0 - reduce value network instability
+            'lr_min': 5e-5,
+            'ent_coef_init': 0.03,
+            'ent_coef_min': 0.001,
+            'clip_range': 0.2,
+            'clip_range_vf': None,
         },
         {
             'stage': 4,
             'magnitude': 'M8.4',
-            'force_limit': 190000,  # CRITICAL: Increased from 160kN - prevent catastrophic failure
-            'timesteps': 350000,
-            'n_steps': 4096,
-            'batch_size': 128,
-            'n_epochs': 30,
+            'force_limit': 1000000,  # 1000 kN (1 MN) - INCREASED for pure active control
+            'timesteps': 300000,
+            'n_steps': 2048,
+            'batch_size': 64,
+            'n_epochs': 10,
             'lr_init': 1.5e-4,
-            'lr_min': 1e-4,  # Increased from 5e-6 - prevent learning from dying
-            'ent_coef_init': 0.08,  # Increased from 0.05 - prevent entropy collapse
-            'ent_coef_min': 0.0005,
-            'clip_range': 0.12,  # Increased from 0.10 - allow bigger updates
-            'clip_range_vf': 0.08,
-            'reward_scale': 9.0,  # Reduced from 16.0 - reduce value network instability
+            'lr_min': 5e-5,
+            'ent_coef_init': 0.03,
+            'ent_coef_min': 0.001,
+            'clip_range': 0.2,
+            'clip_range_vf': None,
         },
     ]
     
-    print("\n[*] Curriculum Stages (EXCEPTIONAL PERFORMANCE TARGETS):")
+    logger.info("\n[*] Curriculum Stages (EXCEPTIONAL PERFORMANCE TARGETS):")
     for stage in stages:
         target_info = {
             'M4.5': '14cm, 0.4% ISDR, 1.0-1.1 DCR',
@@ -440,15 +436,16 @@ def train_v10():
         target = target_info.get(stage['magnitude'], '?')
         msg = f"   Stage {stage['stage']} ({stage['magnitude']}) → {target}"
         logger.info(msg)
-        msg = f"      Force limit: {stage['force_limit']/1000:.0f} kN (conservative, prioritize displacement)"
+        msg = f"      Force limit: {stage['force_limit']/1000:.0f} kN"
         logger.info(msg)
         msg = f"      Timesteps: {stage['timesteps']:,}"
         logger.info(msg)
-        msg = f"      n_epochs: {stage['n_epochs']} (intensive training for tight targets)"
+        msg = f"      n_epochs: {stage['n_epochs']}, n_steps: {stage['n_steps']}, batch_size: {stage['batch_size']}"
         logger.info(msg)
-        msg = f"      Reward scale: {stage['reward_scale']}x (very aggressive displacement + ISDR penalties)"
+        msg = f"      Entropy coef: {stage['ent_coef_init']:.3f} → {stage['ent_coef_min']:.4f}"
         logger.info(msg)
-        msg = f"      Clip ranges: policy={stage['clip_range']}, value={stage['clip_range_vf']} (very tight updates)"
+        vf_clip = stage['clip_range_vf'] if stage['clip_range_vf'] else 'None (unrestricted)'
+        msg = f"      Clip ranges: policy={stage['clip_range']}, value={vf_clip}"
         logger.info(msg)
     
     # ========================================================================
@@ -536,7 +533,7 @@ def train_v10():
                     clip_range=stage_config['clip_range'],
                     clip_range_vf=stage_config['clip_range_vf'],
                     ent_coef=stage_config['ent_coef_init'],
-                    vf_coef=0.5,
+                    vf_coef=0.5,  # Keep original - value network needs full learning capacity
                     max_grad_norm=0.5,
                     policy_kwargs=dict(
                         net_arch=[256, 256, 256],
