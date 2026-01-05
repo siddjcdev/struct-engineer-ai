@@ -379,10 +379,10 @@ class ImprovedTMDBuildingEnv(gym.Env):
         # All with ISDR < 1.2% and DCR < 1.75
         # ================================================================
 
-        # 1. PRIMARY OBJECTIVE: Aggressively minimize displacement
+        # 1. PRIMARY OBJECTIVE: Minimize displacement
         #    Targets: M4.5: 14cm, M5.7: 22cm, M7.4: 30cm, M8.4: 40cm
-        #    Weight reduced from -5.0 to -3.0 to allow value learning
-        displacement_penalty = -3.0 * abs(roof_disp)
+        #    Weight reduced to -1.0 - let ISDR penalty be the primary driver
+        displacement_penalty = -1.0 * abs(roof_disp)
 
         # 2. SECONDARY: Dampen oscillations - Penalize velocity
         velocity_penalty = -0.5 * abs(roof_vel)
@@ -413,7 +413,7 @@ class ImprovedTMDBuildingEnv(gym.Env):
         isdr_threshold = 0.012  # 1.2% - maximum allowed ISDR
         if current_isdr > isdr_threshold:
             isdr_excess = current_isdr - isdr_threshold
-            isdr_penalty = -10.0 * (isdr_excess ** 2)  # CRITICAL: Increased from -5.0 to -10.0 - ISDR is priority # -5.0 * (isdr_excess ** 2)=> aggressive quadratic penality above 1.2%
+            isdr_penalty = -15.0 * (isdr_excess ** 2)  # CRITICAL: Increased to -15.0 - structural safety is #1 priority
         else:
             isdr_penalty = 0.0  # Reward compliance
 
@@ -480,8 +480,8 @@ class ImprovedTMDBuildingEnv(gym.Env):
         self.force_history.append(control_force)
         
         # DEBUG: Print ISDR/DCR every 50 steps if they're significant
-        if self.current_step % 50 == 0 and (current_isdr > 0.003 or current_dcr > 0.5):
-            print(f"[ENV DEBUG] Step {self.current_step}: ISDR={current_isdr*100:.3f}%, DCR={current_dcr:.3f}, ForceUtil={force_utilization*100:.1f}%, Force={control_force/1000:.1f}kN, Disp={roof_disp*100:.2f}cm")
+        # if self.current_step % 50 == 0 and (current_isdr > 0.003 or current_dcr > 0.5):
+        #     print(f"[ENV DEBUG] Step {self.current_step}: ISDR={current_isdr*100:.3f}%, DCR={current_dcr:.3f}, ForceUtil={force_utilization*100:.1f}%, Force={control_force/1000:.1f}kN, Disp={roof_disp*100:.2f}cm")
 
         # Compute interstory drifts for all floors
         drifts = self._compute_interstory_drifts(self.displacement[:self.n_floors])

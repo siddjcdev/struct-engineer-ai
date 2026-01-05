@@ -38,6 +38,7 @@ from datetime import datetime
 from pathlib import Path
 import sys
 import json
+import logging
 
 # Add paths
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'restapi', 'rl_cl'))
@@ -267,9 +268,58 @@ def train_v10():
     log_dir = args.log_dir
     run_name = args.run_name or datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    print("="*70)
-    print("  v10 TRAINING - ADVANCED PPO WITH ALL IMPROVEMENTS")
-    print("="*70)
+    # ========================================================================
+    # SETUP LOGGING TO FILE AND CONSOLE
+    # ========================================================================
+    
+    os.makedirs(model_dir, exist_ok=True)
+    log_file = os.path.join(model_dir, f"training_{run_name}.log")
+    
+    # Create logger
+    logger = logging.getLogger('train_v10')
+    logger.setLevel(logging.DEBUG)
+    
+    # File handler (DEBUG level - captures everything)
+    fh = logging.FileHandler(log_file)
+    fh.setLevel(logging.DEBUG)
+    
+    # Console handler (INFO level - cleaner output)
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setLevel(logging.INFO)
+    
+    # Formatter
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+    
+    # Add handlers
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+    
+    # Redirect print statements to logger (optional - for backwards compatibility)
+    class PrintLogger:
+        def __init__(self, logger, level):
+            self.logger = logger
+            self.level = level
+        
+        def write(self, message):
+            if message.strip():
+                self.logger.log(self.level, message.strip())
+        
+        def flush(self):
+            pass
+    
+    # Keep original stdout for direct file operations
+    original_stdout = sys.stdout
+    
+    logger.info("="*70)
+    logger.info("  v10 TRAINING - ADVANCED PPO WITH ALL IMPROVEMENTS")
+    logger.info("="*70)
+    logger.info(f"Logging to file: {log_file}")
+    logger.info(f"Run name: {run_name}\n")
     
     # ========================================================================
     # CONFIGURATION
@@ -293,20 +343,20 @@ def train_v10():
     # Verify files
     for mag, files in train_files.items():
         if not files:
-            print(f"ERROR: No training files for {mag}")
-            print(f"   Expected: {train_dir}/TRAIN_{mag}_*.csv")
+            logger.error(f"No training files for {mag}")
+            logger.error(f"   Expected: {train_dir}/TRAIN_{mag}_*.csv")
             return None
     
-    print("\nConfiguration:")
-    print(f"   Training directory: {train_dir}")
-    print(f"   Test directory: {test_dir}")
+    logger.info("\nConfiguration:")
+    logger.info(f"   Training directory: {train_dir}")
+    logger.info(f"   Test directory: {test_dir}")
     for mag, files in train_files.items():
-        print(f"   {mag}: {len(files)} training variants")
+        logger.info(f"   {mag}: {len(files)} training variants")
     
-    print("\n[TENSORBOARD] To monitor training in real-time, run in another terminal:")
-    print(f"   tensorboard --logdir={log_dir}")
-    print(f"   Run name: {run_name}")
-    print("   Then open http://localhost:6006 in your browser")
+    logger.info("\n[TENSORBOARD] To monitor training in real-time, run in another terminal:")
+    logger.info(f"   tensorboard --logdir={log_dir}")
+    logger.info(f"   Run name: {run_name}")
+    logger.info("   Then open http://localhost:6006 in your browser")
     
     # ========================================================================
     # CURRICULUM STAGES WITH v10 IMPROVEMENTS
@@ -316,7 +366,7 @@ def train_v10():
         {
             'stage': 1,
             'magnitude': 'M4.5',
-            'force_limit': 100000,  # Increased from 60kN - need more control authority
+            'force_limit': 110000,  # Increased from 100kN - give more control authority
             'timesteps': 180000,
             'n_steps': 1024,
             'batch_size': 32,
@@ -332,39 +382,39 @@ def train_v10():
         {
             'stage': 2,
             'magnitude': 'M5.7',
-            'force_limit': 130000,  # Increased from 90kN - 44.12cm is too high
+            'force_limit': 170000,  # CRITICAL: Increased from 150kN - avoid force saturation
             'timesteps': 180000,
             'n_steps': 2048,
             'batch_size': 64,
             'n_epochs': 15,
             'lr_init': 2.5e-4,
             'lr_min': 1e-4,  # Increased from 1e-5 - prevent learning from dying
-            'ent_coef_init': 0.08,  # Increased from 0.05 - prevent entropy collapse
+            'ent_coef_init': 0.06,  # Reduced from 0.08 - stage 2 is harder, needs less entropy
             'ent_coef_min': 0.0005,
-            'clip_range': 0.10,  # Reduced from 0.15 - fewer clipped updates, stable gradients
+            'clip_range': 0.12,  # Increased from 0.10 - allow bigger updates when struggling
             'clip_range_vf': 0.1,
             'reward_scale': 7.0,  # Reduced from 12.0 - reduce value network instability
         },
         {
             'stage': 3,
             'magnitude': 'M7.4',
-            'force_limit': 150000,  # Increased from 120kN
+            'force_limit': 180000,  # CRITICAL: Increased from 150kN - prevent catastrophic failure
             'timesteps': 280000,
             'n_steps': 4096,
             'batch_size': 128,
             'n_epochs': 25,
             'lr_init': 2e-4,
             'lr_min': 1e-4,  # Increased from 5e-6 - prevent learning from dying
-            'ent_coef_init': 0.08,  # Increased from 0.05 - prevent entropy collapse
+            'ent_coef_init': 0.08,  # Increased from 0.05 - prevent entropy collapse, from 0.01 to 0.05 to prevent determinstic
             'ent_coef_min': 0.0005,
-            'clip_range': 0.10,  # Reduced from 0.12 - fewer clipped updates, stable gradients
+            'clip_range': 0.12,  # Increased from 0.10 - allow bigger updates
             'clip_range_vf': 0.08,
             'reward_scale': 8.0,  # Reduced from 14.0 - reduce value network instability
         },
         {
             'stage': 4,
             'magnitude': 'M8.4',
-            'force_limit': 160000,  # Increased from 130kN
+            'force_limit': 190000,  # CRITICAL: Increased from 160kN - prevent catastrophic failure
             'timesteps': 350000,
             'n_steps': 4096,
             'batch_size': 128,
@@ -373,7 +423,7 @@ def train_v10():
             'lr_min': 1e-4,  # Increased from 5e-6 - prevent learning from dying
             'ent_coef_init': 0.08,  # Increased from 0.05 - prevent entropy collapse
             'ent_coef_min': 0.0005,
-            'clip_range': 0.10,  # Reduced from 0.12 - fewer clipped updates, stable gradients
+            'clip_range': 0.12,  # Increased from 0.10 - allow bigger updates
             'clip_range_vf': 0.08,
             'reward_scale': 9.0,  # Reduced from 16.0 - reduce value network instability
         },
@@ -388,18 +438,22 @@ def train_v10():
             'M8.4': '40cm, 1.2% ISDR, 1.6-1.75 DCR'
         }
         target = target_info.get(stage['magnitude'], '?')
-        print(f"   Stage {stage['stage']} ({stage['magnitude']}) → {target}")
-        print(f"      Force limit: {stage['force_limit']/1000:.0f} kN (conservative, prioritize displacement)")
-        print(f"      Timesteps: {stage['timesteps']:,}")
-        print(f"      n_epochs: {stage['n_epochs']} (intensive training for tight targets)")
-        print(f"      Reward scale: {stage['reward_scale']}x (very aggressive displacement + ISDR penalties)")
-        print(f"      Clip ranges: policy={stage['clip_range']}, value={stage['clip_range_vf']} (very tight updates)")
+        msg = f"   Stage {stage['stage']} ({stage['magnitude']}) → {target}"
+        logger.info(msg)
+        msg = f"      Force limit: {stage['force_limit']/1000:.0f} kN (conservative, prioritize displacement)"
+        logger.info(msg)
+        msg = f"      Timesteps: {stage['timesteps']:,}"
+        logger.info(msg)
+        msg = f"      n_epochs: {stage['n_epochs']} (intensive training for tight targets)"
+        logger.info(msg)
+        msg = f"      Reward scale: {stage['reward_scale']}x (very aggressive displacement + ISDR penalties)"
+        logger.info(msg)
+        msg = f"      Clip ranges: policy={stage['clip_range']}, value={stage['clip_range_vf']} (very tight updates)"
+        logger.info(msg)
     
     # ========================================================================
     # TRAINING LOOP
     # ========================================================================
-    
-    os.makedirs(model_dir, exist_ok=True)
     
     # Load training state for resumption
     training_state_file = os.path.join(model_dir, "training_state.json")
@@ -414,9 +468,9 @@ def train_v10():
         start_stage = training_state['current_stage'] - 1  # Convert to 0-indexed
         total_steps_done = training_state['total_steps_completed']
         completed_stages = training_state.get('completed_stages', [])
-        print(f"\n[CHECKPOINT] Resuming training from Stage {training_state['current_stage']}")
+        logger.info(f"\n[CHECKPOINT] Resuming training from Stage {training_state['current_stage']}")
     else:
-        print(f"\n[CHECKPOINT] Starting fresh training from Stage 1")
+        logger.info(f"\n[CHECKPOINT] Starting fresh training from Stage 1")
     
     start_time = datetime.now()
     model = None
@@ -424,7 +478,7 @@ def train_v10():
     for i, stage_config in enumerate(stages):
         # Skip completed stages
         if i < start_stage:
-            print(f"\nSkipping Stage {i+1} (already completed)")
+            logger.info(f"\nSkipping Stage {i+1} (already completed)")
             continue
         
         stage_num = stage_config['stage']
@@ -432,12 +486,12 @@ def train_v10():
         force_limit = stage_config['force_limit']
         timesteps = stage_config['timesteps']
         
-        print(f"\n{'='*70}")
-        print(f"  STAGE {stage_num}/4: {magnitude} @ {force_limit/1000:.0f} kN")
-        print(f"{'='*70}\n")
+        logger.info(f"\n{'='*70}")
+        logger.info(f"  STAGE {stage_num}/4: {magnitude} @ {force_limit/1000:.0f} kN")
+        logger.info(f"{'='*70}\n")
         
         available_files = train_files[magnitude]
-        print(f"[FILES] Training files: {len(available_files)} variants")
+        logger.info(f"[FILES] Training files: {len(available_files)} variants")
         
         # Create vectorized environment
         def make_env_wrapper():
@@ -460,15 +514,15 @@ def train_v10():
             latest_checkpoint = find_latest_checkpoint(stage_num, model_dir)
             
             if latest_checkpoint and i == start_stage:
-                print(f"\n[CHECKPOINT] Found existing checkpoint: {os.path.basename(latest_checkpoint)}")
-                print(f"[MODEL] Loading model from checkpoint...")
+                logger.info(f"\n[CHECKPOINT] Found existing checkpoint: {os.path.basename(latest_checkpoint)}")
+                logger.info(f"[MODEL] Loading model from checkpoint...")
                 model = PPO.load(latest_checkpoint, env=env)
-                print(f"[OK] Model loaded with {sum(p.numel() for p in model.policy.parameters()):,} parameters")
+                logger.info(f"[OK] Model loaded with {sum(p.numel() for p in model.policy.parameters()):,} parameters")
             else:
-                print(f"\n[MODEL] Creating PPO model...")
-                print(f"   Architecture: [256, 256, 256] (IMPROVED: 3 layers)")
-                print(f"   Learning rate: {stage_config['lr_init']:.2e} (with cosine annealing)")
-                print(f"   Entropy coef: {stage_config['ent_coef_init']:.4f} (with annealing)")
+                logger.info(f"\n[MODEL] Creating PPO model...")
+                logger.info(f"   Architecture: [256, 256, 256] (IMPROVED: 3 layers)")
+                logger.info(f"   Learning rate: {stage_config['lr_init']:.2e} (with cosine annealing)")
+                logger.info(f"   Entropy coef: {stage_config['ent_coef_init']:.4f} (with annealing)")
                 
                 model = PPO(
                     "MlpPolicy",
@@ -490,10 +544,10 @@ def train_v10():
                     verbose=1,
                     device='cpu'
                 )
-                print(f"[OK] Model created with {sum(p.numel() for p in model.policy.parameters()):,} parameters")
+                logger.info(f"[OK] Model created with {sum(p.numel() for p in model.policy.parameters()):,} parameters")
         
         else:
-            print(f"\n[CONTINUE] Continuing from Stage {stage_num-1}...")
+            logger.info(f"\n[CONTINUE] Continuing from Stage {stage_num-1}...")
             model.set_env(env)
         
         # IMPROVEMENT: Granular checkpoint saving (every 50k steps)
@@ -512,9 +566,9 @@ def train_v10():
         tensorboard_callback = TensorBoardMetricsCallback(log_dir=tensorboard_dir)
         
         # Training with dynamic learning rate and entropy annealing
-        print(f"\n[START] Training {magnitude} @ {force_limit/1000:.0f} kN for {timesteps:,} steps...")
-        print(f"   Learning rate: {stage_config['lr_init']:.2e} → {stage_config['lr_min']:.2e} (cosine annealing)")
-        print(f"   Entropy coef: {stage_config['ent_coef_init']:.4f} → {stage_config['ent_coef_min']:.4f}")
+        logger.info(f"\n[START] Training {magnitude} @ {force_limit/1000:.0f} kN for {timesteps:,} steps...")
+        logger.info(f"   Learning rate: {stage_config['lr_init']:.2e} → {stage_config['lr_min']:.2e} (cosine annealing)")
+        logger.info(f"   Entropy coef: {stage_config['ent_coef_init']:.4f} → {stage_config['ent_coef_min']:.4f}")
         
         # Custom learning rate callback (IMPROVEMENT)
         class CustomLRCallback:
@@ -559,16 +613,16 @@ def train_v10():
                 tb_log_name=f"{run_name}/stage{stage_num}_{magnitude}"
             )
         except KeyboardInterrupt:
-            print(f"\n[WARNING] Training interrupted by user")
-            print(f"   Saving emergency checkpoint...")
+            logger.warning(f"\n[WARNING] Training interrupted by user")
+            logger.warning(f"   Saving emergency checkpoint...")
             model.save(f"{model_dir}/stage{stage_num}_INTERRUPTED")
             # Save training state for resumption
             completed_stages.append(stage_num - 1)
             save_training_state(training_state_file, stage_num, magnitude, total_steps_done + timesteps, completed_stages)
             raise
         except Exception as e:
-            print(f"\n[ERROR] Training error: {e}")
-            print(f"   Saving error checkpoint...")
+            logger.error(f"\n[ERROR] Training error: {e}")
+            logger.error(f"   Saving error checkpoint...")
             model.save(f"{model_dir}/stage{stage_num}_ERROR")
             # Save training state for resumption
             completed_stages.append(stage_num - 1)
@@ -614,14 +668,12 @@ def train_v10():
         max_isdr_percent = getattr(test_env, 'max_isdr_percent', 0.0)
         max_dcr = getattr(test_env, 'max_dcr', 0.0)
         
-        
-
-        print(f"\n[RESULTS] Stage {stage_num} - {magnitude}:")
-        print(f"   Peak displacement: {peak_disp*100:.2f} cm")
-        print(f"   Max ISDR: {max_isdr_percent:.2f}%")
-        print(f"   Max DCR: {max_dcr:.2f}")
-        print(f"   Mean force: {metrics['mean_force']/1000:.1f} kN")
-        print(f"   RMS displacement: {metrics['rms_roof_displacement']*100:.2f} cm")
+        logger.info(f"\n[RESULTS] Stage {stage_num} - {magnitude}:")
+        logger.info(f"   Peak displacement: {peak_disp*100:.2f} cm")
+        logger.info(f"   Max ISDR: {max_isdr_percent:.2f}%")
+        logger.info(f"   Max DCR: {max_dcr:.2f}")
+        logger.info(f"   Mean force: {metrics['mean_force']/1000:.1f} kN")
+        logger.info(f"   RMS displacement: {metrics['rms_roof_displacement']*100:.2f} cm")
 
         
     
@@ -631,12 +683,13 @@ def train_v10():
     
     training_time = datetime.now() - start_time
     
-    print(f"\n{'='*70}")
-    print(f"  TRAINING COMPLETE!")
-    print(f"{'='*70}")
-    print(f"\nTotal training time: {training_time}")
-    print(f"Total steps: {total_steps_done:,}")
-    print(f"\n[DONE] Model saved to: {model_dir}/")
+    logger.info(f"\n{'='*70}")
+    logger.info(f"  TRAINING COMPLETE!")
+    logger.info(f"{'='*70}")
+    logger.info(f"\nTotal training time: {training_time}")
+    logger.info(f"Total steps: {total_steps_done:,}")
+    logger.info(f"Model saved to: {model_dir}/")
+    logger.info(f"All logs written to: {log_file}\n")
     print(f"\n�️  v10 SAFE DISPLACEMENT IMPROVEMENTS:")
     print(f"   ✓ Aggressive reward scaling (8-15x displacement penalty)")
     print(f"   ✓ Reduced force limits (50→100kN, vs 150kN baseline)")
