@@ -508,7 +508,14 @@ class ImprovedTMDBuildingEnv(gym.Env):
                 'dcr': 0.0  # Not used in reward (tracking only)
             }
         }
-        
+
+        # Add episode-level metrics when episode ends (for TensorBoard logging)
+        if truncated or terminated:
+            episode_metrics = self.get_episode_metrics()
+            info['max_isdr_percent'] = episode_metrics['max_isdr_percent']
+            info['max_dcr'] = episode_metrics['DCR']
+            info['peak_displacement'] = episode_metrics['peak_roof_displacement']
+
         return obs, reward, terminated, truncated, info
 
 
@@ -544,18 +551,26 @@ class ImprovedTMDBuildingEnv(gym.Env):
                 - rms_roof_displacement: RMS of roof displacement (m)
                 - peak_roof_displacement: Peak roof displacement (m)
                 - max_drift: Maximum interstory drift across all floors and timesteps (m)
+                - max_isdr: Maximum Interstory Drift Ratio (as decimal, e.g. 0.006 = 0.6%)
+                - max_isdr_percent: Maximum ISDR as percentage (e.g. 0.6)
                 - DCR: Drift Concentration Ratio (dimensionless)
                 - peak_force: Peak control force (N)
                 - mean_force: Mean absolute control force (N)
+                - peak_force_kN: Peak control force (kN)
+                - mean_force_kN: Mean absolute control force (kN)
         """
         if len(self.displacement_history) == 0:
             return {
                 'rms_roof_displacement': 0.0,
                 'peak_roof_displacement': 0.0,
                 'max_drift': 0.0,
+                'max_isdr': 0.0,
+                'max_isdr_percent': 0.0,
                 'DCR': 0.0,
                 'peak_force': 0.0,
-                'mean_force': 0.0
+                'mean_force': 0.0,
+                'peak_force_kN': 0.0,
+                'mean_force_kN': 0.0
             }
 
         # Convert to numpy arrays
@@ -572,7 +587,13 @@ class ImprovedTMDBuildingEnv(gym.Env):
         drift_array = np.array(self.drift_history)  # Shape: (timesteps, n_floors)
         max_drift = np.max(drift_array)
 
-        # 4. DCR (Drift Concentration Ratio)
+        # 4. ISDR (Interstory Drift Ratio)
+        # Max drift divided by story height
+        story_height = 3.6  # meters
+        max_isdr = max_drift / story_height
+        max_isdr_percent = max_isdr * 100  # Convert to percentage
+
+        # 5. DCR (Drift Concentration Ratio)
         # For each floor, get its max drift over time
         max_drift_per_floor = np.max(np.abs(drift_array), axis=0)  # Shape: (n_floors,)
 
@@ -588,7 +609,7 @@ class ImprovedTMDBuildingEnv(gym.Env):
         else:
             DCR = 0.0
 
-        # 5. Peak and mean force
+        # 6. Peak and mean force
         peak_force = np.max(np.abs(forces))
         mean_force = np.mean(np.abs(forces))
 
@@ -596,6 +617,8 @@ class ImprovedTMDBuildingEnv(gym.Env):
             'rms_roof_displacement': float(rms_roof),
             'peak_roof_displacement': float(peak_roof),
             'max_drift': float(max_drift),
+            'max_isdr': float(max_isdr),
+            'max_isdr_percent': float(max_isdr_percent),
             'DCR': float(DCR),
             'peak_force': float(peak_force),
             'mean_force': float(mean_force),
@@ -620,7 +643,8 @@ def make_improved_tmd_env(
     actuator_noise_std: float = 0.0,
     latency_steps: int = 0,
     dropout_prob: float = 0.0,
-    obs_bounds: dict = None
+    obs_bounds: dict = None,
+    reward_scale: float = None
 ) -> ImprovedTMDBuildingEnv:
     """
     Create improved TMD environment with optional domain randomization
@@ -635,6 +659,8 @@ def make_improved_tmd_env(
         dropout_prob: Probability of sensor dropout (0.0 = no dropout)
         obs_bounds: Custom observation bounds dict with keys 'disp', 'vel', 'tmd_disp', 'tmd_vel'
                    If None, uses default bounds (1.2m, 3.0m/s, 1.5m, 3.5m/s)
+        reward_scale: Fixed reward scaling multiplier (None = auto-compute based on earthquake PGA)
+                     Use 1.0 for consistent training across different magnitudes
 
     Returns:
         ImprovedTMDBuildingEnv instance with domain randomization
@@ -686,7 +712,7 @@ def make_improved_tmd_env(
         latency_steps=latency_steps,
         dropout_prob=dropout_prob,
         obs_bounds=obs_bounds,
-        reward_scale=None  # Auto-compute adaptive scaling
+        reward_scale=reward_scale  # Pass through reward_scale (None = auto-compute)
     )
 
 

@@ -22,22 +22,28 @@ Date: January 2026
 """
 
 import numpy as np
-import os
+import os, sys
 import glob
 import random
 import argparse
 from datetime import datetime
 import torch
+
+# Add paths
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'restapi', 'rl_cl'))
+
+
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import BaseCallback
-from tmd_environment_adaptive_reward import make_improved_tmd_env
+from rl.rl_cl.tmd_environment_DELETE_adaptive_reward import make_improved_tmd_env
 from ppo_config_v9_advanced import (
     V9AdvancedConfig,
     V9PPOHyperparameters,
     V9CurriculumStages
 )
+
 
 
 class TensorboardCallback(BaseCallback):

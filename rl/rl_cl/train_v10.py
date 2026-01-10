@@ -366,7 +366,7 @@ def train_v10():
         {
             'stage': 1,
             'magnitude': 'M4.5',
-            'force_limit': 500000,  # 500 kN - INCREASED for pure active control (was 110 kN with passive TMD)
+            'force_limit': 150000,  # 150 kN - Light active control for fine-tuning (k=50kN/m passive TMD)
             'timesteps': 200000,    # Increased from 180k - need more samples with new reward
             'n_steps': 2048,        # Increased from 1024 - larger rollout buffer
             'batch_size': 64,       # Increased from 32 - better gradient estimates
@@ -381,7 +381,7 @@ def train_v10():
         {
             'stage': 2,
             'magnitude': 'M5.7',
-            'force_limit': 700000,  # 700 kN - INCREASED for pure active control
+            'force_limit': 200000,  # 200 kN - Light increase for larger earthquakes
             'timesteps': 200000,
             'n_steps': 2048,
             'batch_size': 64,
@@ -396,7 +396,7 @@ def train_v10():
         {
             'stage': 3,
             'magnitude': 'M7.4',
-            'force_limit': 900000,  # 900 kN - INCREASED for pure active control
+            'force_limit': 300000,  # 300 kN - Moderate for extreme earthquakes
             'timesteps': 250000,
             'n_steps': 2048,
             'batch_size': 64,
@@ -411,7 +411,7 @@ def train_v10():
         {
             'stage': 4,
             'magnitude': 'M8.4',
-            'force_limit': 1000000,  # 1000 kN (1 MN) - INCREASED for pure active control
+            'force_limit': 400000,  # 400 kN - Maximum for extreme earthquakes
             'timesteps': 300000,
             'n_steps': 2048,
             'batch_size': 64,
@@ -425,13 +425,13 @@ def train_v10():
         },
     ]
     
-    logger.info("\n[*] Curriculum Stages (EXCEPTIONAL PERFORMANCE TARGETS):")
+    logger.info("\n[*] Curriculum Stages (REALISTIC PERFORMANCE TARGETS):")
     for stage in stages:
         target_info = {
-            'M4.5': '14cm, 0.4% ISDR, 1.0-1.1 DCR',
-            'M5.7': '22cm, 0.6% ISDR, 1.3-1.4 DCR',
-            'M7.4': '30cm, 0.85% ISDR, 1.45-1.6 DCR',
-            'M8.4': '40cm, 1.2% ISDR, 1.6-1.75 DCR'
+            'M4.5': '17-19cm, 0.8-1.2% ISDR, 1.3-1.5 DCR (baseline: ~21cm, 1.4-1.6 DCR)',
+            'M5.7': '23-26cm, 1.0-1.5% ISDR, 1.4-1.6 DCR',
+            'M7.4': '28-32cm, 1.2-1.8% ISDR, 1.5-1.7 DCR',
+            'M8.4': '35-40cm, 1.5-2.0% ISDR, 1.6-1.75 DCR'
         }
         target = target_info.get(stage['magnitude'], '?')
         msg = f"   Stage {stage['stage']} ({stage['magnitude']}) → {target}"
