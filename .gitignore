@@ -268,3 +268,4 @@ rl/rl_cl/logs_*/
 
 rl/rl_cl/logs/
 rl/rl_cl/model_*
+rl/rl_cl/log_*

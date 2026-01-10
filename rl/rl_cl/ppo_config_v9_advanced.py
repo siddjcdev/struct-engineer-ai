@@ -80,7 +80,7 @@ class V9PPOHyperparameters:
 
     # Policy architecture - ENHANCED (deeper network)
     POLICY_TYPE = "MlpPolicy"
-    NETWORK_ARCH = [256, 256, 256]  # THREE layers (was two in v8)
+    NETWORK_ARCH = [256, 256, 256, 256]  # FOUR layers (was three earlier)
     ACTIVATION_FN = torch.nn.Tanh  # Tanh works better for earthquake control (bounded actions)
 
     # Learning optimization
@@ -140,94 +140,97 @@ class V9CurriculumStages:
 
     STAGES = [
         {
-            'name': 'M4.5 @ 50kN',
+            'name': 'M4.5 @ 150kN - Extended',
             'magnitude': 'M4.5',
-            'force_limit': 50_000,
-            'timesteps': 300_000,
+            'force_limit': 150_000,    # 150 kN - sufficient control authority
+            'timesteps': 1_000_000,    # 1M steps for aggressive targets (14cm, 0.4% ISDR)
+            'reward_scale': 1.0,       # CRITICAL: Fixed reward scale (no adaptive scaling!)
 
             # PPO parameters - BALANCED
             'n_steps': 2048,           # INCREASED from 1024 (better advantage estimates)
             'batch_size': 256,         # Balanced with n_steps
             'n_epochs': 10,            # Standard
 
-            # Learning schedule - SMOOTH START
-            'learning_rate': 3e-4,     # Standard LR
-            'use_lr_schedule': False,  # Fixed LR for first stage
+            # Learning schedule - ENABLE FOR LONG TRAINING
+            'learning_rate': 3e-4,     # Start at 3e-4
+            'use_lr_schedule': True,   # Enable cosine decay for 1M steps
+            'final_lr': 1e-4,          # Decay to 1e-4 for fine-tuning
 
-            # Exploration - HIGH
-            'ent_coef': 0.025,         # SLIGHTLY HIGHER than v8 (0.02)
-            'ent_schedule': False,     # Fixed entropy for simplicity
+            # Exploration - MODERATE
+            'ent_coef': 0.03,          # Balanced (between 0.02-0.05)
+            'ent_schedule': False,     # Fixed entropy
 
-            'description': 'Small earthquake - learn basic control with high exploration'
+            'description': 'Extended training (1M steps) with fixed reward_scale=1.0 for aggressive targets'
         },
-        {
-            'name': 'M5.7 @ 100kN',
-            'magnitude': 'M5.7',
-            'force_limit': 100_000,
-            'timesteps': 300_000,
+        # {
+        #     'name': 'M5.7 @ 100kN',
+        #     'magnitude': 'M5.7',
+        #     'force_limit': 100_000,
+        #     'timesteps': 300_000,
 
-            # PPO parameters - BALANCED
-            'n_steps': 4096,           # INCREASED from 2048 (longer rollouts)
-            'batch_size': 512,         # INCREASED to balance larger n_steps
-            'n_epochs': 12,            # INCREASED slightly (more robust updates)
+        #     # PPO parameters - BALANCED
+        #     'n_steps': 4096,           # INCREASED from 2048 (longer rollouts)
+        #     'batch_size': 512,         # INCREASED to balance larger n_steps
+        #     'n_epochs': 12,            # INCREASED slightly (more robust updates)
 
-            # Learning schedule - COSINE ANNEALING
-            'learning_rate': 3e-4,     # Start same as stage 1
-            'use_lr_schedule': True,   # Enable cosine annealing
-            'final_lr': 2e-4,          # Smooth decay to 2e-4
+        #     # Learning schedule - COSINE ANNEALING
+        #     'learning_rate': 3e-4,     # Start same as stage 1
+        #     'use_lr_schedule': True,   # Enable cosine annealing
+        #     'final_lr': 2e-4,          # Smooth decay to 2e-4
 
-            # Exploration - MEDIUM-HIGH
-            'ent_coef': 0.015,         # Moderate exploration
-            'ent_schedule': False,
+        #     # Exploration - MEDIUM-HIGH
+        #     'batch_size': 256,         # Balanced with n_steps ,from 256 to 512 #Did not work well
+        #     'ent_coef': 0.015,         # Moderate exploration, FROM 0.015 to 0.075 
+        #     'ent_schedule': False,
 
-            'description': 'Moderate earthquake - longer rollouts with cosine LR decay'
-        },
-        {
-            'name': 'M7.4 @ 150kN',
-            'magnitude': 'M7.4',
-            'force_limit': 150_000,
-            'timesteps': 400_000,
+        #     'description': 'Moderate earthquake - longer rollouts with cosine LR decay'
+        # },
+        # {
+        #     'name': 'M7.4 @ 150kN',
+        #     'magnitude': 'M7.4',
+        #     'force_limit': 150_000,
+        #     'timesteps': 400_000,
 
-            # PPO parameters - LARGER BUFFERS
-            'n_steps': 8192,           # SIGNIFICANTLY INCREASED (reduce variance)
-            'batch_size': 512,         # Keep large for stability
-            'n_epochs': 15,            # INCREASED (more thorough updates)
+        #     # PPO parameters - LARGER BUFFERS
+        #     'n_steps': 8192,           # SIGNIFICANTLY INCREASED (reduce variance)
+        #     'batch_size': 512,         # Keep large for stability
+        #     'n_epochs': 15,            # INCREASED (more thorough updates)
 
-            # Learning schedule - CAREFUL DECAY
-            'learning_rate': 2e-4,     # SMOOTHER transition from stage 2 (was 1e-4)
-            'use_lr_schedule': True,
-            'final_lr': 1e-4,          # Decay to 1e-4
+        #     # Learning schedule - CAREFUL DECAY
+        #     'learning_rate': 2e-4,     # SMOOTHER transition from stage 2 (was 1e-4)
+        #     'use_lr_schedule': True,
+        #     'final_lr': 1e-4,          # Decay to 1e-4
 
-            # Exploration - LOW
-            'ent_coef': 0.008,         # SLIGHTLY HIGHER than v8 (0.005) for initial exploration
-            'ent_schedule': True,      # Anneal during training
-            'final_ent': 0.003,
+        #     # Exploration - LOW
+        #     'ent_coef': 0.008,         # SLIGHTLY HIGHER than v8 (0.005) for initial exploration, FROM 0.008 to 0.08 DID NOT WORK
+        #     'ent_schedule': True,      # Anneal during training
+        #     'final_ent': 0.003,
 
-            'description': 'High earthquake - large rollouts, careful learning, prevent catastrophic forgetting'
-        },
-        {
-            'name': 'M8.4 @ 150kN',
-            'magnitude': 'M8.4',
-            'force_limit': 150_000,
-            'timesteps': 400_000,
+        #     'description': 'High earthquake - large rollouts, careful learning, prevent catastrophic forgetting'
+        # },
+        # {
+        #     'name': 'M8.4 @ 150kN',
+        #     'magnitude': 'M8.4',
+        #     'force_limit': 150_000,
+        #     'timesteps': 400_000,
 
-            # PPO parameters - MAXIMUM STABILITY
-            'n_steps': 8192,           # Keep large (longest episodes)
-            'batch_size': 512,         # Large batches for stability
-            'n_epochs': 20,            # MAXIMUM epochs (most thorough updates)
+        #     # PPO parameters - MAXIMUM STABILITY
+        #     'n_steps': 8192,           # Keep large (longest episodes)
+        #     'batch_size': 512,         # Large batches for stability
+        #     'n_epochs': 20,            # MAXIMUM epochs (most thorough updates)
 
-            # Learning schedule - ULTRA-CAREFUL
-            'learning_rate': 1e-4,     # Smooth continuation from stage 3
-            'use_lr_schedule': True,
-            'final_lr': 5e-5,          # Very low final LR
+        #     # Learning schedule - ULTRA-CAREFUL
+        #     'learning_rate': 1e-4,     # Smooth continuation from stage 3
+        #     'use_lr_schedule': True,
+        #     'final_lr': 5e-5,          # Very low final LR
 
-            # Exploration - MINIMAL
-            'ent_coef': 0.005,         # SLIGHTLY HIGHER than v8 (0.001)
-            'ent_schedule': True,
-            'final_ent': 0.001,        # Decay to exploitation
+        #     # Exploration - MINIMAL
+        #     'ent_coef': 0.005,         # SLIGHTLY HIGHER than v8 (0.001) FROM 0.005 to 0.05 DID NOT WORK
+        #     'ent_schedule': True,
+        #     'final_ent': 0.001,        # Decay to exploitation
 
-            'description': 'Extreme earthquake - maximum stability, ultra-careful learning'
-        }
+        #     'description': 'Extreme earthquake - maximum stability, ultra-careful learning'
+        # }
     ]
 
     @staticmethod
