@@ -68,17 +68,20 @@ class ImprovedTMDBuildingEnv(gym.Env):
         # This ensures consistent results between MATLAB and Python simulations
         self.n_floors = 12
         self.floor_mass = 2.0e5          # 200,000 kg (was 300,000) - matches MATLAB m0
-        self.tmd_mass = 0.02 * self.floor_mass  # 2% mass ratio = 4000 kg
 
-        # TMD tuning - OPTIMIZED for active control (FIX #1)
-        # Building fundamental frequency: 0.193 Hz
-        # CRITICAL: For active control with 50-150 kN forces, TMD must be stiffer
-        # Passive-optimized TMD (k=3765) caused runaway displacement (867-6780 cm!)
-        # Active-optimized TMD prevents runaway and allows proper control
-        # Trade-off: Passive performance is 0% (but was only 3.5% anyway)
-        # Benefit: Active control can work properly without observation clipping
-        self.tmd_k = 50000               # TMD stiffness (50 kN/m) - active control optimized
-        self.tmd_c = 2000                # TMD damping (2000 N·s/m) - active control optimized
+        # TMD mass - 4% of floor mass for significant control authority
+        self.tmd_mass = 0.04 * self.floor_mass  # 4% mass ratio = 8000 kg
+
+        # TMD tuning - OPTIMALLY TUNED using Den Hartog formula
+        # Building fundamental frequency: ~0.201 Hz (1.265 rad/s) from eigenvalue analysis
+        # Mass ratio μ = tmd_mass / total_building_mass = 8000 / (12 × 200000) = 0.33%
+        # Optimal frequency ratio: f_ratio = 1 / (1 + μ) ≈ 0.997
+        # Optimal TMD frequency: ω_tmd = 0.997 × 1.265 = 1.261 rad/s
+        # Optimal stiffness: k = m × ω² = 8000 × 1.261² = 12,720 N/m
+        # Optimal damping ratio: ζ_opt = sqrt(3μ / (8(1+μ))) ≈ 3.5%
+        # Optimal damping: c = 2 × ζ × sqrt(k × m) = 706 N·s/m
+        self.tmd_k = 12720               # TMD stiffness (12.72 kN/m) - OPTIMALLY TUNED
+        self.tmd_c = 706                 # TMD damping (706 N·s/m) - OPTIMALLY TUNED
 
         # Story stiffness - matches MATLAB k0 and soft_story_factor
         k_typical = 2.0e7                # 20 MN/m (was 800 MN/m) - matches MATLAB k0
