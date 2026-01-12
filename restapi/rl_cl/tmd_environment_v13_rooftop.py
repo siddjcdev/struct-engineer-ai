@@ -440,17 +440,20 @@ class RooftopTMDEnv(gym.Env):
         """
         Updated reward function with all-floor drift tracking
 
-        Penalties (per step):
-        - P_disp(t) = -(d_roof(t) / 0.14)²  [14cm target]
-        - P_dcr(t) = -(DCR(t) / 1.15)²      [1.15 target]
-        - P_isdr(t) = -(max_ISDR(t) / 0.004)²   [0.4% target, MAX across all floors]
-        - P_force(t) = -(w_f(t) / w_fmax)²  [force utilization]
+        NEW REWARD STRUCTURE (rewards for good performance, not just penalties):
+        - R_disp(t) = 1 - (d_roof(t) / 0.14)²  [reward for small displacement]
+        - R_ISDR(t) = 1 - (max_ISDR(t) / 0.004)²  [reward for small drift, MAX across all floors]
+        - R_dcr(t) = 1 - |DCR(t) - 1.15| / 1.15  [reward for uniform drift distribution]
+        - P_force(t) = -(w_f(t) / w_fmax)²  [penalty for force usage]
 
-        NEW Weights (updated for safety):
+        Weights (balanced for safety and efficiency):
         - w_disp = 3.0
-        - w_DCR = 3.0
-        - w_ISDR = 5.0  # INCREASED - safety critical
-        - w_force = 0.3
+        - w_DCR = 2.0  # Reduced - less critical than ISDR
+        - w_ISDR = 5.0  # Highest - safety critical
+        - w_force = 0.5  # Increased to encourage efficiency
+
+        Baseline reward (perfect control): ~9.0
+        Baseline reward (no control): ~-5.0 to -15.0 depending on earthquake
 
         Args:
             control_force: Current control force
@@ -459,21 +462,23 @@ class RooftopTMDEnv(gym.Env):
         # Current roof displacement
         roof_disp = abs(self.d[11])  # meters
 
-        # Displacement penalty (roof)
+        # Displacement reward (roof) - reward for staying under target
         d_roof_target = 0.14  # 14 cm in meters
-        P_disp = -((roof_disp / d_roof_target) ** 2)
+        disp_ratio = min(roof_disp / d_roof_target, 2.0)  # Cap at 2x for stability
+        R_disp = 1.0 - (disp_ratio ** 2)
         w_disp = 3.0
 
-        # ISDR penalty - NEW: Use MAX ISDR across ALL floors
+        # ISDR reward - NEW: Reward for keeping MAX ISDR low across ALL floors
         current_isdrs = all_floor_drifts / self.story_height  # ISDR = drift / story_height
         max_isdr_current = np.max(current_isdrs)
 
         ISDR_target = 0.004  # 0.4%
-        P_isdr = -((max_isdr_current / ISDR_target) ** 2)
-        w_ISDR = 5.0  # INCREASED for safety
+        isdr_ratio = min(max_isdr_current / ISDR_target, 2.0)  # Cap at 2x for stability
+        R_isdr = 1.0 - (isdr_ratio ** 2)
+        w_ISDR = 5.0  # Highest weight - safety critical
 
-        # DCR penalty - estimate from recent drift history
-        # DCR ≈ ratio of max drift to mean drift
+        # DCR reward - estimate from recent drift history
+        # Reward for DCR close to target (uniform damage distribution)
         if self.current_step > 10:
             # Get recent max drifts across all floors
             recent_max_drifts = []
@@ -496,18 +501,20 @@ class RooftopTMDEnv(gym.Env):
             DCR = 1.0
 
         DCR_target = 1.15
-        P_dcr = -((DCR / DCR_target) ** 2)
-        w_DCR = 3.0
+        # Reward decreases linearly with deviation from target
+        dcr_deviation = min(abs(DCR - DCR_target) / DCR_target, 1.0)  # Normalize deviation
+        R_dcr = 1.0 - dcr_deviation
+        w_DCR = 2.0  # Reduced from 3.0
 
-        # Force utilization penalty
+        # Force utilization penalty (keep as penalty to encourage efficiency)
         force_utilization = abs(control_force) / self.max_force
         P_force = -(force_utilization ** 2)
-        w_force = 0.3
+        w_force = 0.5  # Increased from 0.3
 
-        # Total reward
-        r_t = (w_disp * P_disp +
-               w_DCR * P_dcr +
-               w_ISDR * P_isdr +
+        # Total reward: sum of rewards minus force penalty
+        r_t = (w_disp * R_disp +
+               w_DCR * R_dcr +
+               w_ISDR * R_isdr +
                w_force * P_force)
 
         return r_t * self.reward_scale
