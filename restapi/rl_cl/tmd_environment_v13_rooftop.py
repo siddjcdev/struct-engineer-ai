@@ -141,16 +141,25 @@ class RooftopTMDEnv(gym.Env):
                 'disp': 5.0, 'vel': 20.0, 'tmd_disp': 15.0, 'tmd_vel': 60.0
             }
 
+        # EXPANDED OBSERVATION SPACE for ISDR/DCR optimization
+        # Include multiple floors so agent can observe drift patterns
+        # Floors monitored: 1 (bottom), 4 (lower-mid), 8 (soft-story), 11 (top), 12 (roof)
         self.observation_space = spaces.Box(
             low=np.array([
-                -obs_bounds['disp'], -obs_bounds['vel'],      # Roof
-                -obs_bounds['tmd_disp'], -obs_bounds['tmd_vel'],  # TMD
-                -obs_bounds['disp'], -obs_bounds['vel']       # Floor 8
+                -obs_bounds['disp'], -obs_bounds['vel'],      # Floor 1 (bottom)
+                -obs_bounds['disp'], -obs_bounds['vel'],      # Floor 4 (lower-mid)
+                -obs_bounds['disp'], -obs_bounds['vel'],      # Floor 8 (soft-story - critical)
+                -obs_bounds['disp'], -obs_bounds['vel'],      # Floor 11 (near-top)
+                -obs_bounds['disp'], -obs_bounds['vel'],      # Floor 12 (roof)
+                -obs_bounds['tmd_disp'], -obs_bounds['tmd_vel'],  # TMD state
             ]),
             high=np.array([
                 obs_bounds['disp'], obs_bounds['vel'],
+                obs_bounds['disp'], obs_bounds['vel'],
+                obs_bounds['disp'], obs_bounds['vel'],
+                obs_bounds['disp'], obs_bounds['vel'],
+                obs_bounds['disp'], obs_bounds['vel'],
                 obs_bounds['tmd_disp'], obs_bounds['tmd_vel'],
-                obs_bounds['disp'], obs_bounds['vel']
             ]),
             dtype=np.float32
         )
@@ -340,26 +349,45 @@ class RooftopTMDEnv(gym.Env):
 
     def _get_observation(self) -> np.ndarray:
         """
-        Get observation: [roof_disp, roof_vel, tmd_disp, tmd_vel, floor8_disp, floor8_vel]
+        EXPANDED OBSERVATION for ISDR/DCR optimization.
 
-        Roof is primary control target, TMD state is needed for control,
-        floor 8 is monitored due to soft story.
+        Returns: [floor1_disp, floor1_vel, floor4_disp, floor4_vel,
+                  floor8_disp, floor8_vel, floor11_disp, floor11_vel,
+                  roof_disp, roof_vel, tmd_disp, tmd_vel]
+
+        Observing multiple floors allows the agent to:
+        - Detect drift patterns across the building height
+        - Identify which floors have high ISDR (soft-story floor 8 especially)
+        - Optimize DCR by seeing drift distribution
+        - Apply control to minimize max ISDR across all floors
         """
-        # Normalize observations
-        roof_disp_norm = self.d[11] / 5.0
-        roof_vel_norm = self.v[11] / 20.0
-        tmd_disp_norm = self.d[12] / 15.0
-        tmd_vel_norm = self.v[12] / 60.0
-        floor8_disp_norm = self.d[7] / 5.0
+        # Normalize observations from 5 key floors + TMD
+        floor1_disp_norm = self.d[0] / 5.0    # Bottom floor
+        floor1_vel_norm = self.v[0] / 20.0
+        floor4_disp_norm = self.d[3] / 5.0    # Lower-mid floor
+        floor4_vel_norm = self.v[3] / 20.0
+        floor8_disp_norm = self.d[7] / 5.0    # Soft-story (CRITICAL)
         floor8_vel_norm = self.v[7] / 20.0
+        floor11_disp_norm = self.d[10] / 5.0  # Near-top floor
+        floor11_vel_norm = self.v[10] / 20.0
+        roof_disp_norm = self.d[11] / 5.0     # Roof (TMD attachment point)
+        roof_vel_norm = self.v[11] / 20.0
+        tmd_disp_norm = self.d[12] / 15.0     # TMD state
+        tmd_vel_norm = self.v[12] / 60.0
 
         obs = np.array([
+            floor1_disp_norm,
+            floor1_vel_norm,
+            floor4_disp_norm,
+            floor4_vel_norm,
+            floor8_disp_norm,
+            floor8_vel_norm,
+            floor11_disp_norm,
+            floor11_vel_norm,
             roof_disp_norm,
             roof_vel_norm,
             tmd_disp_norm,
-            tmd_vel_norm,
-            floor8_disp_norm,
-            floor8_vel_norm
+            tmd_vel_norm
         ], dtype=np.float32)
 
         return np.clip(obs, -1.0, 1.0)
@@ -438,22 +466,38 @@ class RooftopTMDEnv(gym.Env):
 
     def _calculate_reward(self, control_force: float, all_floor_drifts: np.ndarray) -> float:
         """
-        Updated reward function with all-floor drift tracking
+        AGGRESSIVE OPTIMIZATION STRATEGY:
+        "Aggressively minimize soft-story ISDR and DCR, while keeping displacement
+        reasonably below 17 cm and control forces within limits."
 
-        NEW REWARD STRUCTURE (rewards for good performance, not just penalties):
-        - R_disp(t) = 1 - (d_roof(t) / 0.14)²  [reward for small displacement]
-        - R_ISDR(t) = 1 - (max_ISDR(t) / 0.004)²  [reward for small drift, MAX across all floors]
-        - R_dcr(t) = 1 - |DCR(t) - 1.15| / 1.15  [reward for uniform drift distribution]
-        - P_force(t) = -(w_f(t) / w_fmax)²  [penalty for force usage]
+        Strategy:
+        1. ISDR and DCR are PRIMARY - optimize these aggressively
+        2. Displacement is a SOFT CONSTRAINT - keep reasonably below 17cm (aim for <15cm)
+        3. Force is LIMITED - stay within actuator capacity (300kN)
 
-        Weights (balanced for safety and efficiency):
-        - w_disp = 3.0
-        - w_DCR = 2.0  # Reduced - less critical than ISDR
-        - w_ISDR = 5.0  # Highest - safety critical
-        - w_force = 0.5  # Increased to encourage efficiency
+        Reward Structure (aggressive optimization):
+        - R_ISDR(t) = 1 - (max_ISDR(t) / 0.0055)²  [AGGRESSIVE: target 0.55% ISDR]
+        - R_dcr(t) = 1 - (|DCR(t) - 1.0| / 0.5)²   [AGGRESSIVE: target 1.0 DCR, steep penalty]
+        - R_disp(t) = 1 - (d_roof(t) / 0.15)²      [MODERATE: keep below 15cm comfortably]
+        - P_disp_soft = penalty if > 15cm          [Soft constraint: discourage but allow]
+        - P_disp_hard = HUGE penalty if > 17cm     [Hard constraint: never exceed]
+        - P_force(t) = -(w_f(t) / w_fmax)²         [Keep forces reasonable]
 
-        Baseline reward (perfect control): ~9.0
-        Baseline reward (no control): ~-5.0 to -15.0 depending on earthquake
+        Weights (aggressive ISDR/DCR optimization):
+        - w_ISDR = 15.0   # DOMINANT - aggressive ISDR minimization
+        - w_DCR = 12.0    # VERY HIGH - aggressive DCR optimization
+        - w_disp = 4.0    # MODERATE - keep displacement reasonable
+        - w_disp_soft = 10.0   # Discourage 15-17cm range
+        - w_disp_hard = 200.0  # Never exceed 17cm
+        - w_force = 0.5   # Mild efficiency incentive
+
+        Combined ratio: ISDR+DCR = 27.0 vs displacement = 4.0 → 6.75:1 aggressive optimization
+
+        Target Performance:
+        - ISDR: < 0.55% (aggressive minimization)
+        - DCR: ~1.0 (aggressive uniformity optimization)
+        - Displacement: < 15 cm comfortable, < 17 cm absolute limit
+        - Force: < 300 kN (within actuator limits)
 
         Args:
             control_force: Current control force
@@ -462,60 +506,78 @@ class RooftopTMDEnv(gym.Env):
         # Current roof displacement
         roof_disp = abs(self.d[11])  # meters
 
-        # Displacement reward (roof) - reward for staying under target
-        d_roof_target = 0.14  # 14 cm in meters
-        disp_ratio = min(roof_disp / d_roof_target, 2.0)  # Cap at 2x for stability
-        R_disp = 1.0 - (disp_ratio ** 2)
-        w_disp = 3.0
+        # HARD CONSTRAINT: Never exceed 17 cm (absolute limit)
+        d_hard_limit = 0.17  # 17 cm - ABSOLUTE MAXIMUM
+        if roof_disp > d_hard_limit:
+            violation_ratio = (roof_disp - d_hard_limit) / d_hard_limit
+            P_disp_hard = -200.0 * (violation_ratio ** 2)  # Catastrophic penalty
+        else:
+            P_disp_hard = 0.0
 
-        # ISDR reward - NEW: Reward for keeping MAX ISDR low across ALL floors
-        current_isdrs = all_floor_drifts / self.story_height  # ISDR = drift / story_height
+        # SOFT CONSTRAINT: Discourage 15-17cm range (prefer staying below 15cm)
+        d_soft_target = 0.15  # 15 cm - comfortable target
+        if roof_disp > d_soft_target and roof_disp <= d_hard_limit:
+            # Linearly increasing penalty from 15-17cm
+            soft_violation = (roof_disp - d_soft_target) / (d_hard_limit - d_soft_target)
+            P_disp_soft = -10.0 * (soft_violation ** 2)
+        else:
+            P_disp_soft = 0.0
+
+        # Displacement reward - reward for staying comfortably below 15cm
+        disp_ratio = min(roof_disp / d_soft_target, 2.0)
+        R_disp = 1.0 - (disp_ratio ** 2)
+        w_disp = 4.0  # Moderate weight
+
+        # ISDR reward - AGGRESSIVE PRIMARY OBJECTIVE
+        # Maximize reward for low ISDR, steep penalty for high ISDR
+        current_isdrs = all_floor_drifts / self.story_height
         max_isdr_current = np.max(current_isdrs)
 
-        ISDR_target = 0.004  # 0.4%
-        isdr_ratio = min(max_isdr_current / ISDR_target, 2.0)  # Cap at 2x for stability
+        ISDR_target = 0.0055  # 0.55% target
+        isdr_ratio = min(max_isdr_current / ISDR_target, 3.0)
         R_isdr = 1.0 - (isdr_ratio ** 2)
-        w_ISDR = 5.0  # Highest weight - safety critical
+        w_ISDR = 15.0  # DOMINANT weight - aggressive optimization
 
-        # DCR reward - estimate from recent drift history
-        # Reward for DCR close to target (uniform damage distribution)
-        if self.current_step > 10:
-            # Get recent max drifts across all floors
-            recent_max_drifts = []
-            for floor in range(self.n_floors):
-                if len(self.drift_history_per_floor[floor]) >= 100:
-                    recent_drifts = self.drift_history_per_floor[floor][-100:]
-                else:
-                    recent_drifts = self.drift_history_per_floor[floor]
+        # DCR reward - AGGRESSIVE PRIMARY OBJECTIVE
+        # CORRECTED: DCR = max(Δᵢ) / mean(Δᵢ) at current timestep
+        # This is the proper structural engineering definition from ASCE standards
 
-                if len(recent_drifts) > 0:
-                    recent_max_drifts.append(max(recent_drifts))
+        # Use current floor drifts (already calculated)
+        abs_drifts = np.abs(all_floor_drifts)
+        max_current_drift = np.max(abs_drifts)
+        mean_current_drift = np.mean(abs_drifts)
 
-            if len(recent_max_drifts) > 0:
-                overall_max_drift = max(recent_max_drifts)
-                mean_drift = np.mean(recent_max_drifts)
-                DCR = overall_max_drift / max(mean_drift, 1e-6)
-            else:
-                DCR = 1.0
+        # Calculate DCR using proper formula
+        if mean_current_drift > 1e-8:  # Avoid division by zero
+            DCR = max_current_drift / mean_current_drift
         else:
-            DCR = 1.0
+            DCR = 1.0  # At zero drift, assume uniform (perfect DCR)
 
-        DCR_target = 1.15
-        # Reward decreases linearly with deviation from target
-        dcr_deviation = min(abs(DCR - DCR_target) / DCR_target, 1.0)  # Normalize deviation
-        R_dcr = 1.0 - dcr_deviation
-        w_DCR = 2.0  # Reduced from 3.0
+        # Aggressive DCR optimization: steep quadratic penalty for deviation from 1.0
+        DCR_ideal = 1.0
+        # Steeper penalty: normalize deviation by 0.5 instead of 1.15
+        dcr_deviation = min(abs(DCR - DCR_ideal) / 0.5, 1.5)
+        R_dcr = 1.0 - (dcr_deviation ** 2)
+        w_DCR = 12.0  # VERY HIGH weight - aggressive optimization
 
-        # Force utilization penalty (keep as penalty to encourage efficiency)
+        # Force utilization penalty (keep forces reasonable)
         force_utilization = abs(control_force) / self.max_force
         P_force = -(force_utilization ** 2)
-        w_force = 0.5  # Increased from 0.3
+        w_force = 0.5
 
-        # Total reward: sum of rewards minus force penalty
-        r_t = (w_disp * R_disp +
-               w_DCR * R_dcr +
-               w_ISDR * R_isdr +
-               w_force * P_force)
+        # Total reward - AGGRESSIVE optimization of ISDR and DCR
+        # Priority hierarchy:
+        # 1. Never exceed 17cm displacement (-200× penalty if violated)
+        # 2. AGGRESSIVELY minimize ISDR (15.0 weight)
+        # 3. AGGRESSIVELY minimize DCR deviation from 1.0 (12.0 weight)
+        # 4. Stay comfortably below 15cm displacement (4.0 weight + 10.0 soft penalty)
+        # 5. Keep forces reasonable (0.5 weight)
+        r_t = (w_ISDR * R_isdr +           # 15.0 * [0 to 1] = 0 to 15
+               w_DCR * R_dcr +              # 12.0 * [0 to 1] = 0 to 12
+               w_disp * R_disp +            # 4.0 * [0 to 1] = 0 to 4
+               P_disp_soft +                # -10.0 * (0 to 1) if 15-17cm
+               P_disp_hard +                # -200.0 * violation² if >17cm
+               w_force * P_force)           # 0.5 * [-1 to 0] = -0.5 to 0
 
         return r_t * self.reward_scale
 
