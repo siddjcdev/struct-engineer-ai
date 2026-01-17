@@ -22,6 +22,7 @@ import argparse
 import random
 import glob
 import logging
+import platform
 from datetime import datetime
 from typing import List, Dict
 import numpy as np
@@ -31,7 +32,7 @@ import traceback
 sys.path.insert(0, os.path.abspath('../../restapi/rl_cl'))
 
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback, BaseCallback
 from stable_baselines3.common.logger import configure
@@ -367,6 +368,7 @@ def make_env_factory(train_files: List[str], force_limit: float, reward_scale: f
     """Create environment factory for parallel envs"""
     def _make_env():
         eq_file = random.choice(train_files)
+        print(f"    - Using training file: {os.path.basename(eq_file)}")    
         try:
             env = make_rooftop_tmd_env(
                 eq_file,
@@ -380,9 +382,8 @@ def make_env_factory(train_files: List[str], force_limit: float, reward_scale: f
             raise
     return _make_env
 
-
-def create_parallel_envs(train_files: List[str], force_limit: float, reward_scale: float = 1.0, n_envs: int = 4):
-    """Create parallel training environments"""
+def create_parallel_envs(train_files: List[str], force_limit: float, reward_scale: float = 1.0, n_envs: int = 4, device: str = 'cpu'):
+    """Create parallel training environments with MPS support"""
     if not train_files:
         raise ValueError("No training files provided!")
 
@@ -391,8 +392,23 @@ def create_parallel_envs(train_files: List[str], force_limit: float, reward_scal
         print(f"    - {os.path.basename(f)}")
 
     env_fns = [make_env_factory(train_files, force_limit, reward_scale) for _ in range(n_envs)]
-    return SubprocVecEnv(env_fns)
 
+    # MPS doesn't support multiprocessing - force DummyVecEnv
+    if device == 'mps':
+        env = DummyVecEnv(env_fns)
+        print(f"  ✓ Using {n_envs} sequential environments (DummyVecEnv)")
+        print(f"  ℹ️  MPS requires DummyVecEnv (SubprocVecEnv causes 25x slowdown)\n")
+        return env
+    else:
+        try:
+            env = SubprocVecEnv(env_fns)
+            print(f"  ✓ Using {n_envs} parallel environments (SubprocVecEnv)\n")
+            return env
+        except Exception as e:
+            print(f"  ⚠ SubprocVecEnv failed, falling back to DummyVecEnv")
+            env = DummyVecEnv(env_fns)
+            print(f"  ✓ Using {n_envs} sequential environments (DummyVecEnv)\n")
+            return env
 
 # ============================================================================
 # HELD-OUT TEST EVALUATION
@@ -536,9 +552,38 @@ def train_v13(
     # Setup TeeLogger for console+file logging
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_filename = f"{run_name}_{timestamp}.log"
-    log_path = os.path.join(models_dir, log_filename)
+    log_path = os.path.join(run_dir, log_filename)
     tee_logger = TeeLogger(log_path)
     sys.stdout = tee_logger
+    
+     # Auto-detect device (MPS for Apple Silicon, CUDA for NVIDIA, CPU fallback)
+    gpu_name = None
+    system_info = platform.system()
+
+    if torch.backends.mps.is_available() and system_info == 'Darwin':
+        device = 'mps'
+        gpu_name = "Apple Silicon (MPS)"
+        print("=" * 80)
+        print("  V13 FIXED REWARDS TRAINING (MPS ACCELERATED)")
+        print("=" * 80)
+        print(f"\n🚀 GPU: {gpu_name}")
+        print(f"   Device: {device}")
+        print(f"   Platform: macOS\n")
+    elif torch.cuda.is_available():
+        device = 'cuda'
+        gpu_name = torch.cuda.get_device_name(0)
+        print("=" * 80)
+        print("  V13 FIXED REWARDS TRAINING (GPU ACCELERATED)")
+        print("=" * 80)
+        print(f"\n🚀 GPU: {gpu_name}")
+        print(f"   Device: {device}\n")
+    else:
+        device = 'cpu'
+        print("=" * 80)
+        print("  V13 FIXED REWARDS TRAINING")
+        print("=" * 80)
+        print(f"\n⚠️  No GPU detected - using CPU")
+        print(f"   Platform: {system_info}\n")
 
     try:
         print(f"Logging to: {log_path}")
@@ -599,12 +644,13 @@ def train_v13(
             print(f"    TMD mass: 8000 kg (4% of floor mass)")
             print(f"    ISDR tracking: All 12 floors (not just one)")
 
+            
             # Create parallel envs
             n_envs = V13Config.N_ENVS
             print(f"\n  Creating {n_envs} parallel environments...")
 
             try:
-                env = create_parallel_envs(train_files, force_limit, reward_scale, n_envs)
+                env = create_parallel_envs(train_files, force_limit, reward_scale, n_envs,device)
             except Exception as e:
                 print(f"\n  ❌ ERROR creating environments: {e}")
                 traceback.print_exc()
